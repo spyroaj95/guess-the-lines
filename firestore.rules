@@ -1,0 +1,35 @@
+rules_version = '2';
+
+// Guess the Lines — paste this into Firebase console → Firestore Database → Rules → Publish.
+//
+// There are no accounts. A league lives under a long random key that only exists in the
+// invite link, and nobody is allowed to list leagues, so the key works like a password.
+// Nothing can be deleted from the app.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /leagues/{key} {
+      allow get, create, update: if key.size() >= 16;
+
+      match /players/{playerId} {
+        allow read: if key.size() >= 16;
+        allow create, update: if key.size() >= 16
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 24;
+      }
+
+      match /weeks/{weekId} {
+        allow read: if key.size() >= 16;
+        allow create, update: if key.size() >= 16
+          && request.resource.data.games is list
+          && request.resource.data.games.size() <= 20;
+
+        match /guesses/{playerId} {
+          allow read: if key.size() >= 16;
+          allow create, update: if key.size() >= 16
+            && (!('picks' in request.resource.data) || request.resource.data.picks.size() <= 20);
+        }
+      }
+    }
+  }
+}
