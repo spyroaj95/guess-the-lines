@@ -58,3 +58,24 @@ export function listNames(names) {
   if (names.length <= 1) return names.join('');
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
+
+const monthDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+// "Oct 1 – 5" for a week's first and last kickoff.
+export function dateRange(fromIso, toIso) {
+  const a = new Date(fromIso);
+  const b = new Date(toIso);
+  try {
+    return monthDay.formatRange(a, b);
+  } catch {
+    return `${monthDay.format(a)} – ${monthDay.format(b)}`;
+  }
+}
+
+export const initials = (name) =>
+  String(name || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase() || '?';

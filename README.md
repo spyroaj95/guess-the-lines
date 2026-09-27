@@ -54,8 +54,20 @@ protected by the rules file plus the league's private invite link.
 
 ### 3. Start the league
 
-Open the site, tap **Start a league**, and add your name. Then tap **+** → **Copy link** and send it
-to the group. The link is the league's password: anyone who has it can join.
+Open the site, tap **Start a league**, and add your name. Then tap **+ Add** → **Copy link** and
+send it to the group. The link is the league's password: anyone who has it can join.
+
+## Adding players
+
+Anyone can join any week, right up until that week's lines are revealed. Tap **+ Add**:
+
+- **On their phone:** copy the league link and send it. They open it, add their name, and they're in.
+- **On this phone:** type their name and hand them the phone. When they've locked, tap the gold
+  chip at the top to switch back to yourself.
+
+Occasional players don't hold anyone up. The reveal waits for everyone guessing this week, everyone
+who played last week, and anyone new. A friend who played once and hasn't been back isn't waited on.
+The season table ranks by average miss, so joining late doesn't hurt anyone's standing.
 
 ## Sunday night
 

@@ -109,3 +109,23 @@ export function scoreSeason(entries) {
 
   return { standings, byWeek, best, worst, firstWeekId: byWeek[0]?.week.id ?? null };
 }
+
+/**
+ * Who the reveal should wait for this week: anyone already guessing, anyone who played the
+ * last revealed week, and anyone who joined after it. A guest who played once and hasn't been
+ * back stops holding up the reveal; the regulars always count.
+ *
+ * @param players     { [playerId]: { joinedAt } }
+ * @param guesses     this week's guesses
+ * @param lastWeek    the most recent revealed week before this one (or null)
+ * @param lastGuesses that week's guesses
+ */
+export function expectedPlayers({ players, guesses, lastWeek, lastGuesses }) {
+  const picked = (g, id) => Object.keys(g?.[id]?.picks || {}).length > 0;
+  const cutoff = lastWeek?.revealedAt ?? null;
+  return Object.keys(players || {}).filter((id) => {
+    if (picked(guesses, id) || !lastWeek || picked(lastGuesses, id)) return true;
+    const joinedAt = players[id]?.joinedAt;
+    return joinedAt == null || cutoff == null || joinedAt > cutoff; // still-pending timestamps count as new
+  });
+}

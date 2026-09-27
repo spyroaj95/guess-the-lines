@@ -75,3 +75,22 @@ test('season ranks by average miss and is fair to a late joiner', () => {
   assert.equal(s.best.exact, true);
   assert.equal(s.worst.miss, 4.5);
 });
+
+test('the reveal waits for regulars and newcomers, not for a guest who stopped showing up', async () => {
+  const { expectedPlayers } = await import('../js/scoring.js');
+  const players = {
+    spyro: { joinedAt: 100 },
+    mike: { joinedAt: 110 },
+    nick: { joinedAt: 500 }, // guest, played week 3 only
+    kev: { joinedAt: 2000 }, // joined after week 4 was revealed
+  };
+  const week4 = { id: '2026-2-04', revealedAt: 1500 };
+  const lastGuesses = { spyro: { picks: { a: -3 } }, mike: { picks: { a: -1 } } }; // nick skipped week 4
+  // Week 5, nobody has picked yet: regulars + the newcomer, not nick.
+  assert.deepEqual(expectedPlayers({ players, guesses: {}, lastWeek: week4, lastGuesses }).sort(), ['kev', 'mike', 'spyro']);
+  // Nick comes back and starts guessing: now he counts.
+  const back = { nick: { picks: { b: 7 } } };
+  assert.ok(expectedPlayers({ players, guesses: back, lastWeek: week4, lastGuesses }).includes('nick'));
+  // First week ever: everyone counts.
+  assert.equal(expectedPlayers({ players, guesses: {}, lastWeek: null, lastGuesses: {} }).length, 4);
+});
