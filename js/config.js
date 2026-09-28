@@ -1,11 +1,11 @@
-// Paste your Firebase web config here to play with friends (see README → "Connect Firebase").
-// While this is null the app runs in demo mode: everything is saved in this browser only.
-//
-// Example:
-// export const firebaseConfig = {
-//   apiKey: 'AIza…',
-//   authDomain: 'your-project.firebaseapp.com',
-//   projectId: 'your-project',
-//   appId: '1:…:web:…',
-// };
-export const firebaseConfig = null;
+// Firebase web config for the Guess-The-Lines project. These values are public by design:
+// they identify the project, and firestore.rules is what protects the data.
+// Set this back to null to run in demo mode (everything saved in this browser only).
+export const firebaseConfig = {
+  apiKey: 'AIzaSyAKa0wGUw4ne3yYKsf61_K8f6v5cPOpSUE',
+  authDomain: 'guess-the-lines-a8f88.firebaseapp.com',
+  projectId: 'guess-the-lines-a8f88',
+  storageBucket: 'guess-the-lines-a8f88.firebasestorage.app',
+  messagingSenderId: '281424244771',
+  appId: '1:281424244771:web:310326736f45bbd8ce4196',
+};

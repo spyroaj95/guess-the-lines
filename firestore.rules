@@ -1,10 +1,8 @@
 rules_version = '2';
 
-// Guess the Lines — paste this into Firebase console → Firestore Database → Rules → Publish.
-//
-// There are no accounts. A league lives under a long random key that only exists in the
-// invite link, and nobody is allowed to list leagues, so the key works like a password.
-// Nothing can be deleted from the app.
+// Guess the Lines. There are no accounts: a league lives under a long random key that only
+// exists in the invite link, and nobody is allowed to list leagues, so the key works like a
+// password. Nothing can be deleted from the app.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /leagues/{key} {
