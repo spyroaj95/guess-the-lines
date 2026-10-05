@@ -71,16 +71,31 @@ The season table ranks by average miss, so joining late doesn't hurt anyone's st
 
 ## Sunday night
 
-1. The app opens on the next week that hasn't kicked off.
+1. The app opens on the next week that hasn't kicked off. Night games are tagged TNF, SNF and MNF
+   (or Thanksgiving, Black Friday, Christmas), and games abroad show the city, like London.
 2. Tap the team you think is favored, then set the number with − / +, or tap the number for the
    full picker.
 3. **Lock my lines.** Nobody can see anyone else's numbers.
 4. Once everyone's locked, anyone can hit **Reveal**. The app grabs the current DraftKings lines
-   from ESPN and saves them, so they can't move afterward.
-5. If ESPN has no line for a game, tap the line on the Results screen and fill it in.
+   from ESPN and saves them, so they can't move afterward. Then the reveal show starts.
 
-It runs on the honor system. The lines are already posted on sportsbooks, so nothing stops
-someone from peeking.
+## The reveal show
+
+The reveal works like Sal reading the lines on the pod: one game at a time.
+
+- Every phone in the league jumps into the show and stays on the same game, so you can each watch
+  on your own phone or put one on the TV. Whoever taps moves everyone along.
+- Each game shows the matchup and everyone's guess first, so you can argue about it. It flags
+  games where you picked different favorites. Tap **Reveal the line** and the card flips. The
+  closest guess gets a +1 and the scoreboard at the top updates.
+- **←** goes back a step. **✕** steps you out, and **Watch** gets you back in.
+- On a laptop, the arrow keys or the space bar run the show.
+- If ESPN has no line for a game, tap the card to fill it in. You can also tap a line to fix it.
+- At the end you get the final score, the best call and the biggest miss. **Save the results**
+  makes them official on the Results and Season tabs.
+
+Picks freeze once the show starts. It runs on the honor system. The lines are already posted on
+sportsbooks, so nothing stops someone from peeking.
 
 ## Under the hood
 

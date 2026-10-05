@@ -5,7 +5,10 @@
 // Layout (Firestore paths shown; LocalStore mirrors them in one JSON blob):
 //   leagues/{key}                         – key is random and only exists in the invite link
 //   leagues/{key}/players/{playerId}      – { name, joinedAt }
-//   leagues/{key}/weeks/{weekId}          – { label, games[], lines{}, revealedAt, ... }
+//   leagues/{key}/weeks/{weekId}          – { label, games[], lines{}, show, revealedAt, ... }
+//
+// A reveal is a show everyone watches together: startShow saves the lines and puts the week on
+// game 1, moveShow steps it along (every phone follows), and endShow makes the results official.
 //   leagues/{key}/weeks/{weekId}/guesses/{playerId} – { name, picks{}, lockedAt }
 
 const FIREBASE_VERSION = '12.19.0';
@@ -75,20 +78,35 @@ export class LocalStore {
     wk[playerId] = { picks: {}, ...wk[playerId], name, lockedAt: locked ? Date.now() : null };
     this.write(db);
   }
-  async reveal(id, data) {
-    const db = this.read();
-    const w = db.weeks[id];
-    if (w && !w.revealedAt) {
-      Object.assign(w, data, { revealedAt: Date.now() });
-      this.write(db);
-    }
-  }
   async setLine(id, gameId, value) {
     const db = this.read();
     const w = db.weeks[id];
     if (!w) return;
     w.lines = { ...(w.lines || {}), [gameId]: value };
     w.edited = { ...(w.edited || {}), [gameId]: true };
+    this.write(db);
+  }
+  async startShow(id, data) {
+    const db = this.read();
+    const w = db.weeks[id];
+    if (!w || w.revealedAt || (w.show && w.show.step !== 'done')) return;
+    Object.assign(w, data, { show: { step: 'guesses', index: 0, startedAt: Date.now() } });
+    this.write(db);
+  }
+  async moveShow(id, from, to) {
+    const db = this.read();
+    const s = db.weeks[id]?.show;
+    if (!s || s.index !== from.index || s.step !== from.step) return false;
+    db.weeks[id].show = { ...s, ...to };
+    this.write(db);
+    return true;
+  }
+  async endShow(id) {
+    const db = this.read();
+    const w = db.weeks[id];
+    if (!w || w.revealedAt) return;
+    w.revealedAt = Date.now();
+    w.show = { ...(w.show || {}), step: 'done' };
     this.write(db);
   }
 }
@@ -180,16 +198,38 @@ class FirestoreStore {
       { merge: true },
     );
   }
-  async reveal(id, data) {
-    const { runTransaction, serverTimestamp } = this.fs;
-    const r = this.ref('weeks', id);
-    await runTransaction(this.db, async (tx) => {
-      const s = await tx.get(r);
-      if (s.exists() && !s.data().revealedAt) tx.update(r, { ...data, revealedAt: serverTimestamp() });
-    });
-  }
   async setLine(id, gameId, value) {
     const { updateDoc, FieldPath } = this.fs;
     await updateDoc(this.ref('weeks', id), new FieldPath('lines', gameId), value, new FieldPath('edited', gameId), true);
+  }
+  // Each step is a transaction against the step it came from, so two phones tapping "Next"
+  // at the same moment can't skip a game.
+  async startShow(id, data) {
+    const { runTransaction } = this.fs;
+    const r = this.ref('weeks', id);
+    await runTransaction(this.db, async (tx) => {
+      const w = (await tx.get(r)).data();
+      if (!w || w.revealedAt || (w.show && w.show.step !== 'done')) return;
+      tx.update(r, { ...data, show: { step: 'guesses', index: 0, startedAt: Date.now() } });
+    });
+  }
+  async moveShow(id, from, to) {
+    const { runTransaction } = this.fs;
+    const r = this.ref('weeks', id);
+    return runTransaction(this.db, async (tx) => {
+      const s = (await tx.get(r)).data()?.show;
+      if (!s || s.index !== from.index || s.step !== from.step) return false;
+      tx.update(r, { show: { ...s, ...to } });
+      return true;
+    });
+  }
+  async endShow(id) {
+    const { runTransaction, serverTimestamp } = this.fs;
+    const r = this.ref('weeks', id);
+    await runTransaction(this.db, async (tx) => {
+      const w = (await tx.get(r)).data();
+      if (!w || w.revealedAt) return;
+      tx.update(r, { revealedAt: serverTimestamp(), show: { ...(w.show || {}), step: 'done' } });
+    });
   }
 }

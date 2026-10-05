@@ -79,3 +79,35 @@ export const initials = (name) =>
     .map((w) => w[0])
     .join('')
     .toUpperCase() || '?';
+
+// Kickoff in Eastern time, broken into parts, so a 12:15 a.m. UTC kickoff still reads as Thursday night.
+const etParts = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hourCycle: 'h23', month: 'numeric', day: 'numeric',
+});
+
+// Where a game abroad is played. ESPN's note names the city the league uses ("NFL Paris Game",
+// though the stadium is in Saint-Denis; "NFL London Games"); otherwise the venue's own city.
+export function internationalCity(g) {
+  const named = String(g.note || '').match(/^NFL (.+?) Games?$/i)?.[1] || null;
+  const country = g.venue?.country || '';
+  if (!country) return named;
+  return /^(USA|United States)$/i.test(country) ? null : named || g.venue.city || country;
+}
+
+// Labels for a game: its TV window or holiday, and the city when it's played abroad.
+export function gameBadges(g) {
+  const p = Object.fromEntries(etParts.formatToParts(new Date(g.kickoff)).map((x) => [x.type, x.value]));
+  const day = p.weekday;
+  const hour = Number(p.hour) % 24;
+  const month = Number(p.month);
+  const date = Number(p.day);
+  let when = null;
+  if (month === 11 && day === 'Thu' && date >= 22 && date <= 28) when = 'Thanksgiving';
+  else if (month === 11 && day === 'Fri' && date >= 23 && date <= 29) when = 'Black Friday';
+  else if (month === 12 && date === 25) when = 'Christmas';
+  else if (day === 'Thu' && hour >= 19) when = 'TNF';
+  else if (day === 'Sun' && hour >= 20) when = 'SNF';
+  else if (day === 'Mon') when = 'MNF';
+  const city = internationalCity(g);
+  return [...(when ? [{ kind: 'when', label: when }] : []), ...(city ? [{ kind: 'abroad', label: city }] : [])];
+}

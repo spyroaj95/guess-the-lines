@@ -1,6 +1,7 @@
 /* Guess the Lines — "The Board".
    A dark sportsbook board. Amber is you, green is whoever was closest, everything else stays
-   quiet. Numbers are monospaced so they line up; labels are condensed caps. */
+   quiet. Numbers are monospaced so they line up; labels are condensed caps. Indigo marks the
+   night games, sky blue the ones played abroad, red a reveal that's live. */
 
 :root {
   --bg: #0a0d12;
@@ -26,6 +27,13 @@
   --green-edge: rgba(52, 211, 153, 0.62);
   --on-green: #04130c;
   --orange: #fdba74;
+  --night: #c7d2fe;
+  --night-wash: rgba(129, 140, 248, 0.13);
+  --night-edge: rgba(129, 140, 248, 0.4);
+  --abroad: #bae6fd;
+  --abroad-wash: rgba(56, 189, 248, 0.12);
+  --abroad-edge: rgba(56, 189, 248, 0.42);
+  --live: #f87171;
   --cond: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   --body: 'Barlow', system-ui, -apple-system, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
@@ -193,12 +201,34 @@ svg { flex: none; }
   margin: 0;
   padding: 24px 22px 9px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 10px;
   font: 600 11px/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
 }
+.slot-k { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 9px; }
+.badge {
+  height: 19px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 5px;
+  border: 1px solid var(--night-edge);
+  background: var(--night-wash);
+  color: var(--night);
+  font: 700 10px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge.is-abroad { border-color: var(--abroad-edge); background: var(--abroad-wash); color: var(--abroad); }
+.row-tags { display: flex; gap: 6px; padding: 12px 12px 0; }
+.row-tags + .row { padding-top: 8px; }
+.matchup .badge { margin-left: 9px; position: relative; top: -3px; }
 .panel { margin: 0 16px; background: var(--panel); border: 1px solid var(--hair); border-radius: 18px; overflow: hidden; }
 .game + .game { border-top: 1px solid var(--hair); }
 .row { display: flex; align-items: center; gap: 6px; padding: 12px; }
@@ -536,6 +566,229 @@ svg { flex: none; }
 .lead { margin: 0; font-size: 17px; line-height: 1.5; color: var(--text-2); }
 .fine { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .noscript { padding: 24px; color: var(--text-2); }
+
+/* ---------- the reveal show ---------- */
+
+.live {
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  text-align: left;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.live-txt { flex: 1; min-width: 0; }
+.live-txt b { font-weight: 600; color: var(--text); }
+.live-go { font: 700 16px/1 var(--cond); letter-spacing: 0.08em; text-transform: uppercase; color: var(--live); }
+.live-dot { flex: none; width: 8px; height: 8px; border-radius: 4px; background: var(--live); animation: pulse 1.8s ease-out infinite; }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55); }
+  70%, 100% { box-shadow: 0 0 0 8px rgba(248, 113, 113, 0); }
+}
+
+body.is-show { overflow: hidden; }
+.show-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg);
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.32s var(--ease), transform 0.32s var(--ease);
+}
+.show-wrap[hidden] { display: none; }
+.show-wrap.is-open { opacity: 1; transform: none; }
+.show {
+  max-width: 640px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding-top: calc(env(safe-area-inset-top) + 8px);
+  display: flex;
+  flex-direction: column;
+}
+.show-top { height: 48px; padding: 0 16px 0 6px; display: flex; align-items: center; gap: 8px; }
+.show-x { width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 22px; background: none; color: var(--text-2); }
+.show-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: 700 15px/1 var(--cond);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.show-count { font: 600 12px/1 var(--mono); letter-spacing: 0.06em; color: var(--muted); }
+.ticks { display: flex; gap: 3px; padding: 4px 16px 0; }
+.tick { flex: 1; height: 3px; border-radius: 2px; background: var(--hair-2); transition: background-color 0.35s var(--ease); }
+.tick.is-done { background: var(--text-2); }
+.tick.is-now { background: var(--amber); }
+.score { display: flex; gap: 8px; padding: 14px 16px 0; overflow-x: auto; scrollbar-width: none; }
+.sc {
+  flex: 1 0 96px;
+  min-width: 0;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--hair);
+  background: var(--panel);
+  transition: background-color 0.35s var(--ease), border-color 0.35s var(--ease);
+}
+.sc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 16px/1 var(--cond); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-2); }
+.sc-num { font: 700 22px/1 var(--mono); animation: pop 0.45s var(--pop) both; }
+.sc.is-me .sc-name { color: var(--amber-2); }
+.sc.is-lead { border-color: var(--green-edge); background: var(--green-wash); }
+@keyframes pop { 0% { transform: scale(0.5); opacity: 0; } 60% { transform: scale(1.2); opacity: 1; } }
+
+.stage { flex: 1; padding: 22px 16px 8px; display: flex; flex-direction: column; justify-content: center; gap: 18px; animation: stage-in 0.42s var(--ease) both; }
+@keyframes stage-in { from { opacity: 0; transform: translateX(28px); } }
+.stage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.duel { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; text-align: center; }
+.duel-team b { display: block; font: 700 clamp(58px, 18vw, 112px)/0.9 var(--cond); letter-spacing: 0.02em; }
+.duel-team small { display: block; margin-top: 7px; font: 600 13px/1.1 var(--body); color: var(--muted); }
+.duel-at { font: 600 15px/1 var(--mono); color: var(--muted); }
+
+.guesses { display: flex; flex-direction: column; gap: 8px; }
+.guess {
+  position: relative;
+  padding: 13px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'who off pick';
+  align-items: center;
+  column-gap: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--hair);
+  background: var(--panel);
+  animation: rise 0.5s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+  transition: background-color 0.4s var(--ease), border-color 0.4s var(--ease);
+}
+.guess-who { grid-area: who; min-width: 0; }
+.guess-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 19px/1 var(--cond); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-2); }
+.guess-pick { grid-area: pick; white-space: nowrap; font: 700 23px/1 var(--mono); }
+.guess-off { grid-area: off; white-space: nowrap; font: 600 12px/1 var(--mono); letter-spacing: 0.04em; color: var(--muted); animation: fade 0.3s var(--ease) 0.25s both; }
+.guess .flag { margin-top: 5px; animation: fade 0.3s var(--ease) 0.25s both; }
+.guess.is-me .guess-name { color: var(--amber-2); }
+.guess.is-empty .guess-pick { color: var(--muted); }
+.guess.is-win { background: var(--green-wash); border-color: var(--green-edge); }
+.guess.is-win .guess-name,
+.guess.is-win .guess-off { color: var(--green-2); }
+.plus {
+  position: absolute;
+  top: -9px;
+  right: 12px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: var(--green);
+  color: var(--on-green);
+  font: 700 12px/1 var(--mono);
+  animation: pop 0.5s var(--pop) 0.3s both;
+}
+
+.vegas { perspective: 900px; }
+.vegas-card { position: relative; height: 122px; transform-style: preserve-3d; transition: transform 0.75s var(--pop); }
+.vegas.is-open .vegas-card { transform: rotateX(-180deg); }
+.vegas-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 20px;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.vegas-face small { font: 600 11px/1 var(--body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.vegas-front { border: 1px dashed var(--hair-3); background: repeating-linear-gradient(135deg, var(--panel) 0 12px, var(--panel-2) 12px 24px); }
+.vegas-front b { font: 700 46px/1 var(--mono); color: var(--muted); }
+.vegas-back { transform: rotateX(180deg); border: 1px solid var(--hair-3); background: var(--raise); box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.9); }
+.vegas-back:active:not(:disabled) { transform: rotateX(180deg) scale(0.98); }
+.vegas-back b { font: 700 clamp(40px, 12vw, 64px)/1 var(--mono); color: var(--text); }
+.vegas-back.is-none { border-style: dashed; }
+.vegas-back.is-none b { font: 700 30px/1 var(--cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.say { min-height: 24px; margin: 0; text-align: center; font: 700 22px/1.1 var(--cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--green-2); animation: rise 0.4s var(--ease) 0.35s both; }
+.say.is-tease { font: 600 12px/1.3 var(--mono); letter-spacing: 0.1em; color: var(--orange); animation-delay: 0.5s; }
+.say.is-quiet { font: 500 14px/1.4 var(--body); letter-spacing: 0; text-transform: none; color: var(--muted); }
+
+.final { justify-content: flex-start; text-align: center; }
+.final .eyebrow { color: var(--green-2); }
+.final-who { margin: -8px 0 0; font: 700 clamp(38px, 11vw, 64px)/0.95 var(--cond); letter-spacing: 0.02em; text-transform: uppercase; }
+.final .board { padding: 0; text-align: left; }
+.final .calls { padding: 0; text-align: left; }
+.final-note { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+
+.show-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 10px;
+  background: linear-gradient(to top, var(--bg) 70%, rgba(10, 13, 18, 0));
+}
+.show-foot .btn { height: 56px; }
+.show-back { width: 56px; flex: none; padding: 0; }
+.show-back:disabled { opacity: 0.3; }
+.show-next { flex: 1; font-size: 20px; }
+
+/* A laptop on the TV: bigger type, and the line card sits beside the guesses so the whole
+   game fits on a 16:9 screen without scrolling. */
+@media (min-width: 760px) and (min-height: 560px) {
+  .show { max-width: 1060px; }
+  .stage:not(.final) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto auto auto 1fr;
+    grid-template-areas: 'meta meta' 'duel duel' 'guesses vegas' 'guesses say';
+    align-content: center;
+    gap: 18px 28px;
+  }
+  .stage-meta { grid-area: meta; }
+  .duel { grid-area: duel; }
+  .guesses { grid-area: guesses; }
+  .vegas { grid-area: vegas; }
+  .say { grid-area: say; align-self: start; }
+  .duel-team b { font-size: 120px; }
+  .duel-team small { font-size: 16px; }
+  .guess { padding: 16px 20px; }
+  .guess-name { font-size: 24px; }
+  .guess-pick { font-size: 32px; }
+  .guess-off { font-size: 15px; }
+  .vegas-card { height: 168px; }
+  .vegas-back b { font-size: 84px; }
+  .vegas-back.is-none b { font-size: 40px; }
+  .say { font-size: 30px; }
+  .sc-name { font-size: 20px; }
+  .sc-num { font-size: 28px; }
+}
 
 /* ---------- sheets ---------- */
 

@@ -28,3 +28,18 @@ test('week ids sort chronologically', () => {
   const ids = [weekId(2026, 3, 1), weekId(2026, 2, 10), weekId(2026, 2, 3)].sort();
   assert.deepEqual(ids, ['2026-2-03', '2026-2-10', '2026-3-01']);
 });
+
+test('parses venue, TV and neutral site (Week 4 fixture: London and TNF)', () => {
+  const venues = JSON.parse(readFileSync(new URL('./espn-week4-venues-fixture.json', import.meta.url)));
+  const byName = Object.fromEntries(venues.map((e) => [e.shortName, parseEvent(e)]));
+  const london = byName['IND VS WSH'];
+  assert.equal(london.neutral, true);
+  assert.equal(london.note, 'NFL London Games');
+  assert.deepEqual(london.venue, { city: 'London', country: 'England' });
+  assert.equal(london.tv, 'NFL Net');
+  const tnf = byName['PIT @ CLE'];
+  assert.equal(tnf.neutral, false);
+  assert.equal(tnf.note, '');
+  assert.equal(tnf.venue.country, 'USA');
+  assert.equal(tnf.tv, 'Prime Video');
+});

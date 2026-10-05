@@ -129,3 +129,16 @@ export function expectedPlayers({ players, guesses, lastWeek, lastGuesses }) {
     return joinedAt == null || cutoff == null || joinedAt > cutoff; // still-pending timestamps count as new
   });
 }
+
+/**
+ * The reveal show's scoreboard: games won so far, counting only the first `revealed` games
+ * (in the order they're being read out). Everyone who guessed shows up, even at zero.
+ */
+export function runningTally(week, guesses, revealed) {
+  const shown = new Set((week.games || []).slice(0, revealed).map((g) => g.id));
+  const lines = Object.fromEntries(Object.entries(week.lines || {}).filter(([id]) => shown.has(id)));
+  const r = scoreWeek({ ...week, lines }, guesses);
+  const won = Object.fromEntries(r.players.map((p) => [p.playerId, p.won]));
+  const ids = Object.keys(guesses || {}).filter((id) => Object.keys(guesses[id]?.picks || {}).length);
+  return ids.map((id) => ({ playerId: id, won: won[id] || 0 }));
+}

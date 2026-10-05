@@ -56,12 +56,17 @@ export function parseEvent(e) {
     color: t.team.color ? `#${t.team.color}` : null,
   });
   const odds = (c.odds || [])[0];
+  const venue = c.venue?.address || {};
   return {
     id: String(e.id),
     kickoff: e.date,
     state: e.status?.type?.state || 'pre',
     home: team(home),
     away: team(away),
+    venue: { city: venue.city || '', country: venue.country || '' },
+    neutral: Boolean(c.neutralSite),
+    note: (c.notes || []).map((n) => n.headline).find(Boolean) || '',
+    tv: (c.broadcasts || []).flatMap((b) => b.names || [])[0] || '',
     line: odds ? homeLine(odds, home.team.abbreviation, away.team.abbreviation) : null,
     lineSource: odds?.provider?.name || null,
   };

@@ -1,0 +1,109 @@
+[
+ {
+  "id": "401872964",
+  "date": "2026-10-02T00:15Z",
+  "shortName": "PIT @ CLE",
+  "status": {
+   "type": {
+    "state": "post"
+   }
+  },
+  "competitions": [
+   {
+    "neutralSite": false,
+    "venue": {
+     "fullName": "Huntington Bank Field",
+     "address": {
+      "city": "Cleveland",
+      "state": "OH",
+      "country": "USA"
+     }
+    },
+    "notes": [],
+    "broadcasts": [
+     {
+      "names": [
+       "Prime Video"
+      ]
+     }
+    ],
+    "competitors": [
+     {
+      "homeAway": "home",
+      "team": {
+       "abbreviation": "CLE",
+       "shortDisplayName": "Browns",
+       "name": "Browns",
+       "color": "472a08"
+      }
+     },
+     {
+      "homeAway": "away",
+      "team": {
+       "abbreviation": "PIT",
+       "shortDisplayName": "Steelers",
+       "name": "Steelers",
+       "color": "000000"
+      }
+     }
+    ],
+    "odds": []
+   }
+  ]
+ },
+ {
+  "id": "401872965",
+  "date": "2026-10-04T13:30Z",
+  "shortName": "IND VS WSH",
+  "status": {
+   "type": {
+    "state": "post"
+   }
+  },
+  "competitions": [
+   {
+    "neutralSite": true,
+    "venue": {
+     "fullName": "Tottenham Hotspur Stadium",
+     "address": {
+      "city": "London",
+      "country": "England"
+     }
+    },
+    "notes": [
+     {
+      "headline": "NFL London Games"
+     }
+    ],
+    "broadcasts": [
+     {
+      "names": [
+       "NFL Net"
+      ]
+     }
+    ],
+    "competitors": [
+     {
+      "homeAway": "home",
+      "team": {
+       "abbreviation": "WSH",
+       "shortDisplayName": "Commanders",
+       "name": "Commanders",
+       "color": "5a1414"
+      }
+     },
+     {
+      "homeAway": "away",
+      "team": {
+       "abbreviation": "IND",
+       "shortDisplayName": "Colts",
+       "name": "Colts",
+       "color": "003b75"
+      }
+     }
+    ],
+    "odds": []
+   }
+  ]
+ }
+]
