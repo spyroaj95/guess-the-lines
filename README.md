@@ -1,8 +1,8 @@
 # Guess the Lines
 
 Bill Simmons and Cousin Sal's Sunday-night game, built for a group chat. Everyone guesses next
-week's NFL spreads. The app keeps the real lines hidden until everyone locks, then pulls them from
-ESPN (DraftKings) and scores it.
+week's NFL spreads. The real lines stay hidden until you're all together, then the app reveals
+the DraftKings lines (via ESPN) and scores it.
 
 ## How it's scored
 
@@ -76,26 +76,31 @@ The season table ranks by average miss, so joining late doesn't hurt anyone's st
 2. Tap the team you think is favored, then set the number with − / +, or tap the number for the
    full picker.
 3. **Lock my lines.** Nobody can see anyone else's numbers.
-4. Once everyone's locked, anyone can hit **Reveal**. The app grabs the current DraftKings lines
-   from ESPN and saves them, so they can't move afterward. Then the reveal show starts.
+4. **Nobody reveals alone.** When you're together, everyone with picks taps **Ready** on their
+   phone (a guest playing on your phone: switch to them and tap Ready for them). Reveal stays
+   locked until everyone has. Tapped it too early? **Not yet** takes it back.
+5. Anyone hits **Reveal**, and every phone at the table flips to the results.
 
-## The reveal show
+## Which lines count
 
-The reveal works like Sal reading the lines on the pod: one game at a time.
+The lines are DraftKings' (ESPN shows DraftKings), taken twice:
 
-- Every phone in the league jumps into the show and stays on the same game, so you can each watch
-  on your own phone or put one on the TV. Whoever taps moves everyone along.
-- Each game shows the matchup and everyone's guess first, so you can argue about it. It flags
-  games where you picked different favorites. Tap **Reveal the line** and the card flips. The
-  closest guess gets a +1 and the scoreboard at the top updates.
-- **←** goes back a step. **✕** steps you out, and **Watch** gets you back in.
-- On a laptop, the arrow keys or the space bar run the show.
-- If ESPN has no line for a game, tap the card to fill it in. You can also tap a line to fix it.
-- At the end you get the final score, the best call and the biggest miss. **Save the results**
-  makes them official on the Results and Season tabs.
+- **Sunday night**, about 11:45 PM Eastern, once next week's board is up.
+- **Monday morning**, about 8 AM Eastern.
 
-Picks freeze once the show starts. It runs on the honor system. The lines are already posted on
-sportsbooks, so nothing stops someone from peeking.
+The reveal uses Monday morning's line, or Sunday night's if Monday's isn't in yet. Reveal on
+Sunday night and the results switch to Monday's lines once they're taken. A line you fixed by
+hand stays. A game that was off the board for both snapshots (teams still to play on Monday
+night) uses ESPN's line at the moment you reveal. If there's no line at all, tap it on the
+Results screen and fill it in.
+
+A GitHub Action (`.github/workflows/lines.yml`) takes the snapshots and commits them to
+`lines/<week>.json`. To take one by hand: GitHub → Actions → *Snapshot lines* → *Run workflow*,
+or `node scripts/snapshot-lines.mjs mon`. Don't open those files if you're playing: they're the
+answers.
+
+It runs on the honor system. The lines are already posted on sportsbooks, so nothing stops
+someone from peeking.
 
 ## Under the hood
 
@@ -105,6 +110,8 @@ sportsbooks, so nothing stops someone from peeking.
 | `js/app.js` | Screens and game flow |
 | `js/scoring.js` | Scoring rules (pure functions, unit tested) |
 | `js/espn.js` | Schedule and lines from ESPN's public scoreboard (no key needed) |
+| `js/lines.js` | Which lines count: the Sunday-night and Monday-morning snapshots (unit tested) |
+| `scripts/snapshot-lines.mjs`, `.github/workflows/lines.yml` | Takes the snapshots on schedule |
 | `js/store.js` | Demo store (localStorage) and the shared Firestore store |
 | `firestore.rules` | Database security rules |
 

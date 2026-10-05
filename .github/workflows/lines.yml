@@ -1,0 +1,46 @@
+# Snapshots next week's lines (DraftKings, via ESPN) on Sunday night and again Monday morning,
+# and commits them to lines/<weekId>.json for the reveal. Cron runs in UTC, so each snapshot is
+# scheduled twice to cover daylight saving; scripts/snapshot-lines.mjs keeps the on-time one.
+name: Snapshot lines
+
+on:
+  schedule:
+    - cron: '45 3 * * 1' # Sunday 11:45 PM EDT (10:45 PM EST)
+    - cron: '45 4 * * 1' # Sunday 11:45 PM EST (12:45 AM EDT)
+    - cron: '7 12 * * 1' # Monday 8:07 AM EDT (7:07 AM EST)
+    - cron: '7 13 * * 1' # Monday 8:07 AM EST (9:07 AM EDT)
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: 'sun or mon (blank = whichever is due)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lines
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: snap
+        run: node scripts/snapshot-lines.mjs ${{ inputs.slot }}
+      - name: Commit the snapshot
+        run: |
+          git add lines
+          if git diff --cached --quiet; then
+            echo "No new snapshot."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Lines: ${{ steps.snap.outputs.name }}"
+          git push

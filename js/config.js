@@ -9,3 +9,6 @@ export const firebaseConfig = {
   messagingSenderId: '281424244771',
   appId: '1:281424244771:web:310326736f45bbd8ce4196',
 };
+
+// Where the Sunday-night and Monday-morning line snapshots are committed (lines/<weekId>.json).
+export const linesRepo = 'spyroaj95/guess-the-lines';

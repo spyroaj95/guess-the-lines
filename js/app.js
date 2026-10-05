@@ -1,13 +1,13 @@
-import { firebaseConfig } from './config.js';
+import * as config from './config.js'; // a namespace, so a phone with an older cached config still loads
 import { LocalStore, createFirestoreStore } from './store.js';
 import * as espn from './espn.js';
-import { expectedPlayers, runningTally, scoreSeason, scoreWeek } from './scoring.js';
+import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js';
+import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js';
 import { morphInto } from './morph.js';
 import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, num, randomKey, slug, stamp, wins } from './util.js';
 
 const main = document.getElementById('main');
 const foot = document.getElementById('foot');
-const showEl = document.getElementById('show');
 const sheetEl = document.getElementById('sheet');
 const toastEl = document.getElementById('toast');
 
@@ -25,7 +25,6 @@ const ICON = {
   checkSm: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 11, 3.2, '#34D399'),
   link: svg('<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>', 17, 2),
   phone: svg('<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>', 17, 2),
-  close: svg('<path d="M6 6l12 12M18 6L6 18"/>', 20, 2.2),
   globe: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9s1.2-6.4 3.8-9z"/>', 11, 2.2),
   target:
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="#34D399"/></svg>',
@@ -36,7 +35,7 @@ const MARK =
 // ---------------------------------------------------------------- state
 
 const S = {
-  live: Boolean(firebaseConfig),
+  live: Boolean(config.firebaseConfig),
   key: null,
   store: null,
   meId: null,
@@ -59,10 +58,7 @@ const S = {
   season: null,
   seasonToken: 0,
   guessCache: {}, // revealed weeks' guesses, for deciding who the reveal waits on
-  // The reveal show
-  showOpen: false, // on screen on this phone
-  showOut: {}, // weeks whose show this phone stepped out of
-  showPending: null, // { weekId, from, to } while a step is on its way to the server
+  justRevealed: null,
   // UI
   sheet: null,
   sheetTimer: null,
@@ -77,7 +73,7 @@ const weekGames = () => (S.week?.games ? withVenues(S.week.games) : S.liveGames 
 const joined = () => Boolean(S.meId && S.players[S.meId]);
 const myGuess = () => S.guesses[S.meId];
 const nameOf = (id) => S.players[id]?.name || S.guesses[id]?.name || S.resGuesses[id]?.name || id;
-const canEdit = () => joined() && S.week !== undefined && !S.week?.revealedAt && !S.week?.show && !myGuess()?.lockedAt;
+const canEdit = () => joined() && S.week !== undefined && !S.week?.revealedAt && !myGuess()?.lockedAt;
 const weekTitle = (w) => (!w ? '' : w.type === 3 ? w.short : `Week ${w.week}`);
 const shortWeek = (w) => (!w ? '' : w.type === 3 ? w.short : `Wk ${w.week}`);
 const inviteUrl = () => `${location.origin}${location.pathname}#k=${S.key}`;
@@ -86,10 +82,6 @@ const revealedIds = () =>
     .filter((w) => w.revealedAt)
     .map((w) => w.id)
     .sort();
-const isLive = (w) => Boolean(w?.show && !w.revealedAt && w.show.step !== 'done');
-// Where the show is for the week on screen, counting a step this phone just took.
-const showAt = () => (!isLive(S.week) ? null : S.showPending?.weekId === S.week.id ? S.showPending.to : S.week.show);
-const sameStep = (a, b) => Boolean(a && b && a.index === b.index && a.step === b.step);
 const haptic = (pattern = 8) => {
   try {
     navigator.vibrate?.(pattern);
@@ -121,7 +113,7 @@ async function boot() {
   S.key = S.live ? readLeagueKey() : 'demo';
   if (!S.key) return renderLanding();
   render();
-  S.store = S.live ? await createFirestoreStore(firebaseConfig, S.key) : new LocalStore(S.key);
+  S.store = S.live ? await createFirestoreStore(config.firebaseConfig, S.key) : new LocalStore(S.key);
   S.store.touchLeague();
   S.meId = localStorage.getItem(meKey());
 
@@ -132,7 +124,6 @@ async function boot() {
   });
   S.store.watchWeeks((list) => {
     S.weeks = Object.fromEntries(list.map((w) => [w.id, w]));
-    followShow();
     if (S.tab === 'results') ensureResults();
     if (S.tab === 'season') loadSeason();
     render();
@@ -140,9 +131,7 @@ async function boot() {
 
   S.cal = await espn.loadCalendar();
   const target = await espn.targetWeek(S.cal);
-  const ids = S.cal.weeks.map((w) => w.id);
-  const live = Object.values(S.weeks).find((w) => isLive(w) && ids.includes(w.id)); // a reveal already going
-  await openWeek(ids.indexOf(live ? live.id : target.id));
+  await openWeek(S.cal.weeks.findIndex((w) => w.id === target.id));
 }
 
 function readLeagueKey() {
@@ -170,13 +159,14 @@ async function openWeek(idx) {
   const w = S.cal.weeks[idx];
   S.unsub.week?.();
   S.unsub.guesses?.();
-  if (S.showOpen) closeShow();
   Object.assign(S, { weekIdx: idx, week: undefined, guesses: {}, liveGames: null, myPicks: {}, error: null });
   render();
   S.unsub.week = S.store.watchWeek(w.id, (doc) => {
     const before = S.week;
     S.week = doc;
-    syncShow(before, doc);
+    // Whoever taps Reveal, every phone at the table flips to the results with them.
+    if (before && !before.revealedAt && doc?.revealedAt && S.tab === 'week' && S.busy !== 'reveal') showFreshResults(doc.id);
+    refreshLines(doc);
     render();
   });
   S.unsub.guesses = S.store.watchGuesses(w.id, (g) => {
@@ -301,153 +291,107 @@ async function setLocked(on) {
   }
 }
 
-// ---------------------------------------------------------------- the reveal show
-//
-// Like Sal on the pod: one game at a time, everyone says what they had, then the line comes out.
-// The show lives on the week doc, so every phone in the room shows the same game and whoever
-// taps moves everybody along. The results only become official at the end.
+// Nobody reveals alone. Everyone with picks this week taps Ready once you're all together, and
+// only then does Reveal unlock.
+function notReady() {
+  return Object.keys(S.guesses).filter((id) => Object.keys(S.guesses[id]?.picks || {}).length > 0 && !S.guesses[id]?.readyAt);
+}
 
-async function startShow() {
+async function setReady(on) {
+  const w = curWeek();
+  if (!w || !joined() || !myGuess()?.lockedAt) return;
+  try {
+    await S.store.setReady(w.id, S.meId, on, nameOf(S.meId));
+    haptic(on ? 14 : 6);
+  } catch (err) {
+    console.error(err);
+    toast('Couldn’t reach the server. Try again.');
+  }
+}
+
+async function reveal() {
   const w = curWeek();
   if (!w || !S.week || S.busy) return;
+  const unready = notReady().map(nameOf);
+  if (unready.length) return toast(`Waiting on ${listNames(unready)} to tap Ready.`);
   const waiting = waitingOn().map(nameOf);
   if (
     waiting.length &&
-    !confirm(`${listNames(waiting)} ${waiting.length === 1 ? 'hasn’t' : 'haven’t'} locked yet. Once the reveal starts, nobody can change their picks. Start anyway?`)
+    !confirm(`${listNames(waiting)} ${waiting.length === 1 ? 'hasn’t' : 'haven’t'} made picks this week. Once the lines are out nobody else can guess. Reveal anyway?`)
   )
     return;
   S.busy = 'reveal';
   render();
   try {
-    await flushNow();
-    const fresh = await espn.loadWeek(w, { fresh: true });
-    const byId = Object.fromEntries(fresh.map((g) => [g.id, g]));
-    const lines = {};
-    for (const g of S.week.games) lines[g.id] = byId[g.id]?.line ?? null;
+    const [snaps, fresh] = await Promise.all([loadSnaps(w.id), espn.loadWeek(w, { fresh: true }).catch(() => [])]);
+    const live = Object.fromEntries(fresh.map((g) => [g.id, g.line]));
+    const { lines, from } = pickLines(S.week.games, snaps, live);
     if (Object.values(lines).every((l) => l == null)) {
-      toast('ESPN hasn’t posted lines for these games yet.');
+      toast('No lines are posted for these games yet.');
       return;
     }
-    const lineSource = fresh.find((g) => g.lineSource)?.lineSource || 'ESPN';
-    delete S.showOut[w.id];
-    await S.store.startShow(w.id, { lines, lineSource, lineAsOf: Date.now() });
+    const times = snapTimes(snaps);
+    const used = Object.values(from);
+    const lineAsOf = used.includes('mon') ? times.mon : used.includes('sun') ? times.sun : Date.now();
+    const lineSource = snaps?.mon?.source || snaps?.sun?.source || fresh.find((g) => g.lineSource)?.lineSource || 'ESPN';
+    await S.store.reveal(w.id, { lines, lineFrom: from, lineSnaps: times, lineSource, lineAsOf });
+    haptic([12, 60, 18]);
+    showFreshResults(w.id);
   } catch (err) {
     console.error(err);
-    toast('Couldn’t start the reveal. Check your connection and try again.');
+    toast('Couldn’t reach the server. Try again in a minute.');
   } finally {
     S.busy = null;
     render();
   }
 }
 
-// guesses → line → next game's guesses → … → final
-function nextStep({ index: i, step }, dir, n) {
-  if (dir > 0) {
-    if (step === 'guesses') return { index: i, step: 'line' };
-    if (step === 'line') return i + 1 < n ? { index: i + 1, step: 'guesses' } : { index: n, step: 'final' };
-    return null;
+// Right after a reveal, the board fills in one game at a time, like Sal reading them out.
+function showFreshResults(id) {
+  S.justRevealed = id;
+  setTimeout(() => S.justRevealed === id && (S.justRevealed = null), 4000);
+  S.tab = 'results';
+  openResults(id);
+  window.scrollTo({ top: 0 });
+}
+
+// Sunday night and Monday morning snapshots of the lines (see js/lines.js). Straight from the
+// repo first, since GitHub Pages can lag a commit by a few minutes.
+async function loadSnaps(id) {
+  const repo = config.linesRepo;
+  const urls = [repo && `https://raw.githubusercontent.com/${repo}/main/lines/${id}.json`, `lines/${id}.json`];
+  for (const url of urls.filter(Boolean)) {
+    try {
+      const r = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' });
+      if (r.ok) return await r.json();
+    } catch {
+      // try the next copy
+    }
   }
-  if (step === 'line') return { index: i, step: 'guesses' };
-  if (step === 'guesses') return i > 0 ? { index: i - 1, step: 'line' } : null;
-  if (step === 'final') return { index: n - 1, step: 'line' };
   return null;
 }
 
-async function moveShow(dir) {
-  const w = S.week;
-  const at = showAt();
-  if (!w || !at || S.showPending) return;
-  const to = nextStep(at, dir, w.games.length);
-  if (!to) return;
-  // Move this phone right away; the other phones follow once the server has it.
-  const pending = (S.showPending = { weekId: w.id, from: { index: at.index, step: at.step }, to });
-  haptic(to.step === 'line' && dir > 0 ? [10, 40, 16] : 6);
-  render();
+// Revealed on Sunday night? Monday morning's lines replace Sunday's once they're in.
+const linesChecked = new Set();
+async function refreshLines(w) {
+  if (!w?.revealedAt || !w.lineFrom || w.lineSnaps?.mon || linesChecked.has(w.id)) return;
+  linesChecked.add(w.id);
   try {
-    const moved = await S.store.moveShow(w.id, pending.from, to);
-    if (!moved && S.showPending === pending) S.showPending = null; // someone else moved it first
+    const snaps = await loadSnaps(w.id);
+    const changes = newerLines(w, snaps);
+    if (changes) await S.store.refreshLines(w.id, changes, snapTimes(snaps));
   } catch (err) {
     console.error(err);
-    if (S.showPending === pending) S.showPending = null;
-    toast('Couldn’t reach the server. Try again.');
-  }
-  render();
-  setTimeout(() => {
-    if (S.showPending !== pending) return;
-    S.showPending = null;
-    render();
-  }, 6000);
-}
-
-async function finishShow() {
-  const w = S.week;
-  if (!w || S.busy) return;
-  S.busy = 'finish';
-  render();
-  try {
-    await S.store.endShow(w.id);
-    haptic([12, 60, 18]);
-  } catch (err) {
-    console.error(err);
-    toast('Couldn’t save the results. Try again.');
-  } finally {
-    S.busy = null;
-    render();
+    linesChecked.delete(w.id);
   }
 }
 
-// Open the show when a reveal starts (or is already going when the app loads), and land
-// everyone on the results together when it ends.
-function syncShow(before, doc) {
-  const p = S.showPending;
-  if (p && (p.weekId !== doc?.id || !sameStep(doc?.show, p.from))) S.showPending = null;
-  if (isLive(doc)) {
-    if (!S.showOpen && !S.showOut[doc.id]) openShow();
-  } else if (S.showOpen) {
-    closeShow();
-    if (doc?.revealedAt && !before?.revealedAt) {
-      S.tab = 'results';
-      openResults(doc.id);
-      window.scrollTo({ top: 0 });
-    }
-  }
-}
-
-// When someone starts a reveal, every phone in the league jumps to that week to watch.
-function followShow() {
-  if (!S.cal || S.weekIdx < 0) return; // still booting; boot picks the week itself
-  const live = Object.values(S.weeks).find((w) => isLive(w) && !S.showOut[w.id]);
-  if (!live || live.id === curWeek()?.id) return;
-  const idx = S.cal.weeks.findIndex((w) => w.id === live.id);
-  if (idx >= 0) openWeek(idx);
-}
-
-function openShow() {
-  S.showOpen = true;
-  keepAwake(true);
-}
-
-function closeShow() {
-  S.showOpen = false;
-  S.showPending = null;
-  keepAwake(false);
-}
-
-// Phones lying on the coffee table shouldn't go dark mid-reveal.
-let wake = null;
-function keepAwake(on) {
-  if (on && !wake && navigator.wakeLock && !document.hidden) {
-    const p = (wake = navigator.wakeLock.request('screen').catch(() => null));
-    p.then((lock) => {
-      if (!lock) return void (wake === p && (wake = null));
-      lock.addEventListener('release', () => wake === p && (wake = null));
-    });
-  } else if (!on && wake) {
-    const p = wake;
-    wake = null;
-    p.then((lock) => lock?.release()).catch(() => {});
-  }
-}
+const linesSub = (w) => {
+  const from = Object.values(w.lineFrom || {});
+  const slot = from.includes('mon') ? 'mon' : from.includes('sun') ? 'sun' : null;
+  const when = esc(stamp(w.lineAsOf || w.revealedAt));
+  return `${slot ? `${SLOT_NAME[slot]} lines (${when})` : `Lines as of ${when}`} · ${esc(w.lineSource || 'ESPN')}`;
+};
 
 // ---------------------------------------------------------------- results + season
 
@@ -464,6 +408,7 @@ function openResults(id) {
   Object.assign(S, { resId: id, resWeek: undefined, resGuesses: {} });
   S.unsub.resWeek = S.store.watchWeek(id, (d) => {
     S.resWeek = d;
+    refreshLines(d);
     render();
   });
   S.unsub.resGuesses = S.store.watchGuesses(id, (g) => {
@@ -673,19 +618,9 @@ document.addEventListener('click', (e) => {
     case 'picker-num': return pickerNum(Number(d.v));
     case 'lock': return setLocked(true);
     case 'unlock': return setLocked(false);
-    case 'reveal': return startShow();
-    case 'show-next': return moveShow(1);
-    case 'show-back': return moveShow(-1);
-    case 'show-finish': return finishShow();
-    case 'show-open':
-      if (!isLive(S.week)) return;
-      delete S.showOut[S.week.id];
-      openShow();
-      return render();
-    case 'show-leave':
-      if (S.week) S.showOut[S.week.id] = true;
-      closeShow();
-      return render();
+    case 'ready': return setReady(true);
+    case 'unready': return setReady(false);
+    case 'reveal': return reveal();
     case 'tab': return setTab(d.tab);
     case 'week-prev': return openWeek(S.weekIdx - 1);
     case 'week-next': return openWeek(S.weekIdx + 1);
@@ -723,26 +658,14 @@ document.addEventListener('submit', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && S.sheet) return closeSheet();
-  // On a laptop hooked up to the TV: arrows or space to run the show.
-  if (!S.showOpen || S.sheet || e.metaKey || e.ctrlKey || e.altKey) return;
-  const onControl = e.target.closest?.('button, input, a');
-  if (e.key === 'ArrowRight' || (!onControl && (e.key === ' ' || e.key === 'Enter'))) {
-    e.preventDefault();
-    if (showAt()?.step === 'final') finishShow();
-    else moveShow(1);
-  } else if (e.key === 'ArrowLeft') {
-    e.preventDefault();
-    moveShow(-1);
-  } else if (e.key === 'Escape') {
-    if (S.week) S.showOut[S.week.id] = true;
-    closeShow();
-    render();
-  }
+  if (e.key === 'Escape' && S.sheet) closeSheet();
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) flushNow();
-  else if (S.showOpen) keepAwake(true); // the browser drops the wake lock in the background
+  if (document.hidden) return flushNow();
+  // Back on the app (say, Monday morning): check for newer lines again.
+  linesChecked.clear();
+  refreshLines(S.week);
+  refreshLines(S.resWeek);
 });
 window.addEventListener('pagehide', () => flushNow());
 
@@ -768,29 +691,6 @@ function render() {
   const view = S.tab === 'results' ? viewResults() : S.tab === 'season' ? viewSeason() : viewWeek();
   morphInto(main, (S.live ? '' : '<p class="demo"><b>DEMO MODE</b> · saved on this device only</p>') + view);
   morphInto(foot, (S.tab === 'week' ? dock() : '') + tabBar());
-  renderShow();
-}
-
-let showTimer;
-function renderShow() {
-  if (S.showOpen && showAt()) {
-    clearTimeout(showTimer);
-    if (showEl.hidden) {
-      showEl.innerHTML = showView();
-      showEl.hidden = false;
-    } else morphInto(showEl, showView());
-    document.body.classList.add('is-show');
-    if (!showEl.classList.contains('is-open')) {
-      requestAnimationFrame(() => requestAnimationFrame(() => S.showOpen && showEl.classList.add('is-open')));
-    }
-  } else if (!showEl.hidden && showEl.classList.contains('is-open')) {
-    document.body.classList.remove('is-show');
-    showEl.classList.remove('is-open');
-    showTimer = setTimeout(() => {
-      showEl.hidden = true;
-      showEl.innerHTML = '';
-    }, 340);
-  }
 }
 
 const view = (key, html) => `<div class="view" data-key="${esc(key)}">${html}</div>`;
@@ -810,11 +710,6 @@ function top({ title, sub = '', meta = '', pager = null }) {
         <div><h1 class="title">${esc(title)}</h1>${sub ? `<p class="subtitle">${sub}</p>` : ''}</div>
         ${nav}
       </div>
-      ${
-        isLive(S.week) && !S.showOpen && S.tab !== 'week'
-          ? `<button class="live" data-act="show-open"><span class="live-dot" aria-hidden="true"></span><span class="live-txt"><b>Reveal in progress</b> · ${esc(weekTitle(curWeek()))}</span><span class="live-go">Watch</span></button>`
-          : ''
-      }
     </header>`;
 }
 
@@ -882,11 +777,11 @@ function viewWeek() {
   const revealed = Boolean(S.week?.revealedAt);
   const mine = games.filter((g) => S.myPicks[g.id] != null).length;
   const sub = revealed
-    ? `Lines revealed ${esc(stamp(S.week.lineAsOf || S.week.revealedAt))} · ${esc(S.week.lineSource || 'ESPN')}`
+    ? linesSub(S.week)
     : games.length
       ? `${esc(dateRange(games[0].kickoff, games[games.length - 1].kickoff))} · ${games.length} games`
       : '';
-  const meta = revealed ? 'LINES OUT' : isLive(S.week) ? 'LIVE REVEAL' : myGuess()?.lockedAt ? 'LOCKED' : joined() && games.length ? `${mine}/${games.length} SET` : '';
+  const meta = revealed ? 'LINES OUT' : myGuess()?.lockedAt ? 'LOCKED' : joined() && games.length ? `${mine}/${games.length} SET` : '';
   const head = top({
     title: weekTitle(w), sub, meta,
     pager: {
@@ -916,12 +811,13 @@ function people(total) {
     const me = id === S.meId;
     const n = me ? Object.keys(S.myPicks).length : Object.keys(g?.picks || {}).length;
     const locked = Boolean(g?.lockedAt);
-    const cls = `person${me ? ' is-me' : ''}${locked ? ' is-locked' : ''}`;
+    const ready = locked && Boolean(g?.readyAt) && !S.week?.revealedAt;
+    const cls = `person${me ? ' is-me' : ''}${locked ? ' is-locked' : ''}${ready ? ' is-ready' : ''}`;
     const inner = `<span class="av">${locked ? ICON.check : esc(initials(nameOf(id)))}</span>${esc(nameOf(id))}${
-      locked ? '<span class="sr">, locked</span>' : n && !me ? `<span class="ct">${n}/${total}</span>` : ''
+      ready ? '<span class="here">Here</span>' : locked ? '<span class="sr">, locked</span>' : n && !me ? `<span class="ct">${n}/${total}</span>` : ''
     }`;
     return me
-      ? `<button class="${cls}" data-act="me" aria-label="Playing as ${esc(nameOf(id))}${locked ? ', locked' : ''}. Switch player">${inner}</button>`
+      ? `<button class="${cls}" data-act="me" aria-label="Playing as ${esc(nameOf(id))}${ready ? ', ready' : locked ? ', locked' : ''}. Switch player">${inner}</button>`
       : `<span class="${cls}">${inner}</span>`;
   });
   return `<div class="people">${chips.join('')}<button class="add" data-act="add-player" aria-label="Add a player">${ICON.plus}Add</button></div>`;
@@ -976,11 +872,6 @@ function dock() {
   if (S.week?.revealedAt) {
     return bar('<b>Lines are out</b><small>See who was closest.</small>', '<button class="btn btn-primary" data-act="tab" data-tab="results">Results</button>', true);
   }
-  const at = showAt();
-  if (at) {
-    const where = at.step === 'final' ? 'Final score is up.' : `On game ${at.index + 1} of ${games.length}.`;
-    return bar(`<b>Reveal is on</b><small>${where}</small>`, '<button class="btn btn-primary" data-act="show-open">Watch</button>', true);
-  }
   if (!myGuess()?.lockedAt) {
     const left = games.length - set;
     return bar(
@@ -989,17 +880,28 @@ function dock() {
       !left,
     );
   }
-  const waiting = waitingOn().map(nameOf);
-  const all = !waiting.length;
+  // Locked. Next: everyone taps Ready once you're together, then anyone can reveal.
+  if (!myGuess().readyAt) {
+    const waiting = waitingOn().map(nameOf);
+    return bar(
+      `<b>Locked in</b><small>${esc(waiting.length ? `Waiting on ${listNames(waiting)} to lock.` : 'Tap Ready once you’re all together.')}</small>`,
+      '<button class="btn btn-quiet" data-act="unlock">Unlock</button><button class="btn btn-primary" data-act="ready">Ready</button>',
+      true,
+    );
+  }
+  const unready = notReady().map(nameOf);
+  if (unready.length) {
+    return bar(
+      `<b>You’re ready</b><small>${esc(`Waiting on ${listNames(unready)}.`)}</small>`,
+      '<button class="btn btn-quiet" data-act="unready">Not yet</button><button class="btn" disabled>Reveal</button>',
+      true,
+    );
+  }
   const revealBtn =
     S.busy === 'reveal'
-      ? '<button class="btn btn-primary" disabled><span class="spinner" aria-hidden="true"></span>Starting</button>'
-      : `<button class="btn${all ? ' btn-primary' : ''}" data-act="reveal">Reveal</button>`;
-  return bar(
-    `<b>Locked in</b><small>${esc(all ? 'Everyone’s in.' : `Waiting on ${listNames(waiting)}.`)}</small>`,
-    `<button class="btn btn-quiet" data-act="unlock">Unlock</button>${revealBtn}`,
-    true,
-  );
+      ? '<button class="btn btn-primary" disabled><span class="spinner" aria-hidden="true"></span>Revealing</button>'
+      : '<button class="btn btn-primary" data-act="reveal">Reveal</button>';
+  return bar('<b>Everyone’s here</b><small>Reveal the lines together.</small>', `<button class="btn btn-quiet" data-act="unready">Not yet</button>${revealBtn}`, true);
 }
 
 // ---- Results
@@ -1011,9 +913,7 @@ function viewResults() {
     return view(
       'results-empty',
       top({ title: 'Results', sub: 'Nothing revealed yet' }) +
-        (isLive(S.week)
-          ? note('The results land here when the reveal ends.')
-          : note('The lines drop once everyone locks in their picks.', '<button class="btn" data-act="tab" data-tab="week">Make your picks</button>')),
+        note('The lines come out once everyone has tapped Ready, together.', '<button class="btn" data-act="tab" data-tab="week">Make your picks</button>'),
     );
   }
   const i = ids.indexOf(S.resId);
@@ -1024,15 +924,20 @@ function viewResults() {
   if (!w) return view(`results-${S.resId}`, top({ title: 'Results', sub: 'Loading…', pager }) + skeleton(4));
 
   const r = scoreWeek(w.id === S.week?.id ? { ...w, games: withVenues(w.games) } : w, S.resGuesses);
-  const sub = `Lines as of ${esc(stamp(w.lineAsOf || w.revealedAt))} · ${esc(w.lineSource || 'ESPN')}`;
-  const head = top({ title: weekTitle(w), sub, meta: 'RESULTS', pager });
+  const head = top({ title: weekTitle(w), sub: linesSub(w), meta: 'RESULTS', pager });
   if (!r.players.length) return view(`results-${w.id}`, head + note('Nobody guessed this week.'));
+
+  // Right after a reveal, the board fills in one game at a time, like Sal reading them out.
+  const fresh = S.justRevealed === w.id;
+  let n = 0;
+  const anim = () => (fresh ? { cls: ' enter', style: ` style="--i:${n++}"` } : { cls: '', style: '' });
 
   const tiles = r.players
     .map((p) => {
       const win = r.weekWinners.includes(p.playerId);
       const best = !win && r.players.length > 1 && Math.abs(p.avg - r.bestAvg) < 1e-9;
-      return `<div class="tile${win ? ' is-win' : ''}${p.playerId === S.meId ? ' is-me' : ''}">
+      const a = anim();
+      return `<div class="tile${win ? ' is-win' : ''}${p.playerId === S.meId ? ' is-me' : ''}${a.cls}"${a.style}>
           <div class="tile-name">${esc(nameOf(p.playerId))}</div>
           <div class="tile-num">${wins(p.won)}</div>
           <div class="tile-cap">games won</div>
@@ -1043,12 +948,12 @@ function viewResults() {
     .join('');
   const order = r.players.map((p) => p.playerId);
   const groups = slotGroups(r.games, (gr) => gr.game)
-    .map(({ head, rows }) => `${head}<div class="panel">${rows.map(({ item, own }) => resultRow(w, item, order, own)).join('')}</div>`)
+    .map(({ head, rows }) => `${head}<div class="panel">${rows.map(({ item, own }) => resultRow(w, item, order, own, anim())).join('')}</div>`)
     .join('');
   return view(`results-${w.id}`, `${head}<div class="board">${tiles}</div>${groups}`);
 }
 
-function resultRow(w, { game: g, line, cells }, order, own) {
+function resultRow(w, { game: g, line, cells }, order, own, a) {
   const byId = Object.fromEntries(cells.map((c) => [c.playerId, c]));
   const edited = w.edited?.[g.id];
   const cellHtml = order
@@ -1064,7 +969,7 @@ function resultRow(w, { game: g, line, cells }, order, own) {
         </div>`;
     })
     .join('');
-  return `<article class="result" data-key="r-${esc(g.id)}">
+  return `<article class="result${a.cls}"${a.style} data-key="r-${esc(g.id)}">
       <div class="result-top">
         <div class="matchup">${esc(g.away.abbr)}<i>${g.neutral ? 'vs' : '@'}</i>${esc(g.home.abbr)}${badgeHtml(own)}</div>
         <button class="line${edited ? ' is-edited' : ''}" data-act="edit-line" data-g="${esc(g.id)}" data-w="${esc(w.id)}" aria-label="Line ${esc(lineText(g, line))}${edited ? ', edited' : ''}. Tap to fix it"><small>${edited ? 'Edited' : 'Line'}</small><b>${esc(lineText(g, line))}</b></button>
@@ -1150,182 +1055,6 @@ function viewSeason() {
      <h2 class="section">By week</h2><div class="weeks">${weeks}</div>
      <h2 class="section">Highlights</h2><div class="calls">${call(best, true)}${call(worst, false)}</div>`,
   );
-}
-
-// ---- The reveal show
-
-// Everyone with picks this week, in the same order as the player chips.
-function showPlayers() {
-  const has = (id) => Object.keys(S.guesses[id]?.picks || {}).length > 0;
-  const ids = sortedPlayers().filter(has);
-  return [...ids, ...Object.keys(S.guesses).filter((id) => has(id) && !ids.includes(id))];
-}
-
-function showView() {
-  const w = S.week;
-  const at = showAt();
-  const games = weekGames();
-  const n = games.length;
-  const ids = showPlayers();
-  const final = at.step === 'final' || !games[at.index];
-  const shown = final ? n : at.index + (at.step === 'line' ? 1 : 0);
-  const won = Object.fromEntries(runningTally(w, S.guesses, shown).map((t) => [t.playerId, t.won]));
-  const top = Math.max(0, ...Object.values(won));
-  const score = ids
-    .map((id) => {
-      const v = won[id] || 0;
-      const lead = top > 0 && Math.abs(v - top) < 1e-9;
-      return `<div class="sc${id === S.meId ? ' is-me' : ''}${lead ? ' is-lead' : ''}"><span class="sc-name">${esc(nameOf(id))}</span><b class="sc-num" data-key="sc-${esc(id)}-${v}">${wins(v)}</b></div>`;
-    })
-    .join('');
-  const ticks = games
-    .map((g, i) => `<span class="tick${i < shown ? ' is-done' : ''}${!final && i === at.index ? ' is-now' : ''}"></span>`)
-    .join('');
-  const next = final
-    ? S.busy === 'finish'
-      ? '<button class="btn btn-primary show-next" disabled><span class="spinner" aria-hidden="true"></span>Saving</button>'
-      : '<button class="btn btn-primary show-next" data-act="show-finish">Save the results</button>'
-    : `<button class="btn btn-primary show-next" data-act="show-next">${
-        at.step === 'guesses' ? 'Reveal the line' : at.index + 1 < n ? 'Next game' : 'Final score'
-      }</button>`;
-  const first = at.index === 0 && at.step === 'guesses';
-  return `<div class="show" role="dialog" aria-modal="true" aria-labelledby="show-title">
-      <header class="show-top">
-        <button class="show-x" data-act="show-leave" aria-label="Step out of the reveal">${ICON.close}</button>
-        <h2 id="show-title" class="show-title"><span class="live-dot" aria-hidden="true"></span>${esc(weekTitle(curWeek()))} reveal</h2>
-        <span class="show-count">${final ? 'FINAL' : `${at.index + 1}/${n}`}</span>
-      </header>
-      <div class="ticks" aria-hidden="true">${ticks}</div>
-      <div class="score" aria-label="Games won so far">${score}</div>
-      ${final ? finalStage({ ...w, games }) : gameStage(w, games[at.index], at, ids)}
-      <footer class="show-foot">
-        <button class="btn show-back" data-act="show-back" aria-label="Back one step" ${first ? 'disabled' : ''}>${ICON.left}</button>
-        ${next}
-      </footer>
-    </div>`;
-}
-
-// One game: the matchup, everyone's guess, then the line flips over. The stage keeps the same
-// elements from "guesses" to "line" so the card flip and the winner's glow can animate.
-function gameStage(w, g, at, ids) {
-  const open = at.step === 'line';
-  const line = w.lines?.[g.id] ?? null;
-  const r = open && line != null ? scoreWeek({ games: [g], lines: { [g.id]: line } }, S.guesses).games[0] : null;
-  const cell = Object.fromEntries((r?.cells || []).map((c) => [c.playerId, c]));
-  const share = r?.winners.length ? 1 / r.winners.length : 0;
-  const cards = ids
-    .map((id, i) => {
-      const pick = S.guesses[id]?.picks?.[g.id];
-      const c = cell[id];
-      const off = !r
-        ? ''
-        : !c
-          ? '<div class="guess-off">no pick</div>'
-          : c.exact
-            ? `<div class="guess-off exact">${ICON.target}Exact</div>`
-            : `<div class="guess-off">${num(c.miss)} off</div>`;
-      return `<div class="guess${id === S.meId ? ' is-me' : ''}${c?.win ? ' is-win' : ''}${pick == null ? ' is-empty' : ''}" style="--i:${i}"><div class="guess-who"><div class="guess-name">${esc(nameOf(id))}</div>${
-        c?.flip ? '<div class="flag">Wrong side</div>' : ''
-      }</div><div class="guess-pick">${pick == null ? '—' : esc(lineText(g, pick))}</div>${off}${c?.win ? `<span class="plus">+${wins(share)}</span>` : ''}</div>`;
-    })
-    .join('');
-
-  // Before the line drops: something to argue about. After: who took it.
-  let say = '';
-  let tone = '';
-  if (!open) {
-    const picks = ids.map((id) => S.guesses[id]?.picks?.[g.id]).filter((v) => v != null);
-    if (picks.length > 1 && picks.some((v) => v < 0) && picks.some((v) => v > 0)) say = 'Different favorites';
-    else if (picks.length > 1 && picks.every((v) => v === picks[0])) say = 'Same number all around';
-    tone = ' is-tease';
-  } else if (line == null) {
-    say = 'ESPN didn’t have one. Tap the card to add it.';
-    tone = ' is-quiet';
-  } else if (!r.winners.length) {
-    say = 'Nobody guessed this one';
-    tone = ' is-quiet';
-  } else {
-    const names = r.winners.map(nameOf);
-    const exact = r.cells.some((c) => c.win && c.exact);
-    say =
-      r.winners.length === 1
-        ? `${names[0]} ${exact ? 'nails it' : 'takes it'}`
-        : r.winners.length === r.cells.length
-          ? 'Dead heat'
-          : `${listNames(names)} split it`;
-  }
-
-  const lineTxt = lineText(g, line);
-  const label = w.edited?.[g.id] ? 'The line · edited' : line == null ? 'The line' : `The line${w.lineSource ? ` · ${w.lineSource}` : ''}`;
-  const back = open
-    ? `aria-label="${line == null ? 'No line yet. Tap to add it' : `Line ${esc(lineTxt)}. Tap to fix it`}"`
-    : 'tabindex="-1" aria-hidden="true"';
-  return `<section class="stage" data-key="st-${esc(w.id)}-${at.index}">
-      <div class="stage-meta">${badgeHtml(gameBadges(g))}<span>${esc(kickoff(g.kickoff))}${g.tv ? ` · ${esc(g.tv)}` : ''}</span></div>
-      <div class="duel" role="heading" aria-level="3">
-        <div class="duel-team"><b>${esc(g.away.abbr)}</b><small>${esc(g.away.name)}</small></div>
-        <span class="duel-at">${g.neutral ? 'vs' : '@'}</span>
-        <div class="duel-team"><b>${esc(g.home.abbr)}</b><small>${esc(g.home.name)}</small></div>
-      </div>
-      <div class="guesses">${cards}</div>
-      <div class="vegas${open ? ' is-open' : ''}">
-        <div class="vegas-card">
-          <div class="vegas-face vegas-front" aria-hidden="${open}"><small>The line</small><b>?</b></div>
-          <button class="vegas-face vegas-back${open && line == null ? ' is-none' : ''}" data-act="edit-line" data-g="${esc(g.id)}" data-w="${esc(w.id)}" ${back}><small>${esc(label)}</small><b>${
-            open ? (line == null ? 'No line' : esc(lineTxt)) : ''
-          }</b></button>
-        </div>
-      </div>
-      <p class="say${tone}" data-key="say-${at.step}" aria-live="polite">${esc(say)}</p>
-    </section>`;
-}
-
-function finalStage(w) {
-  const r = scoreWeek(w, S.guesses);
-  const names = r.weekWinners.map(nameOf);
-  const title = !names.length ? 'No games scored' : names.length === 1 ? `${names[0]} wins the week` : `${listNames(names)} split the week`;
-  const tiles = r.players
-    .map((p, i) => {
-      const win = r.weekWinners.includes(p.playerId);
-      return `<div class="tile enter${win ? ' is-win' : ''}${p.playerId === S.meId ? ' is-me' : ''}" style="--i:${i + 2}">
-          <div class="tile-name">${esc(nameOf(p.playerId))}</div>
-          <div class="tile-num">${wins(p.won)}</div>
-          <div class="tile-cap">games won</div>
-          <div class="tile-cap mono">${avg(p.avg)} avg off</div>
-          ${p.exact ? `<div class="tile-cap">${p.exact} exact</div>` : ''}
-        </div>`;
-    })
-    .join('');
-  // This week's closest call and worst miss (latest game on ties).
-  let best = null;
-  let worst = null;
-  for (const gr of r.games) {
-    for (const c of gr.cells) {
-      const rec = { ...c, game: gr.game, line: gr.line };
-      if (!best || c.miss <= best.miss) best = rec;
-      if (!worst || c.miss >= worst.miss) worst = rec;
-    }
-  }
-  const call = (rec, good, i) => {
-    const g = rec.game;
-    const caption = good
-      ? `${rec.exact ? 'Dead on' : `${num(rec.miss)} off`} · ${g.away.abbr} ${g.neutral ? 'vs' : '@'} ${g.home.abbr}`
-      : `Line was ${lineText(g, rec.line)}`;
-    return `<div class="call enter" style="--i:${i}">
-        <span class="call-k ${good ? 'good' : 'bad'}">${good ? `${ICON.target}Best call` : 'Biggest miss'}</span>
-        <span class="call-v">${esc(nameOf(rec.playerId))} · ${esc(lineText(g, rec.pick))}</span>
-        <span class="call-c">${esc(caption)}</span>
-      </div>`;
-  };
-  const n = r.players.length + 2;
-  const calls = best ? `<div class="calls">${call(best, true, n)}${worst && worst.miss > best.miss ? call(worst, false, n + 1) : ''}</div>` : '';
-  return `<section class="stage final" data-key="st-${esc(w.id)}-final">
-      <div class="eyebrow enter" style="--i:0">Final</div>
-      <h3 class="final-who enter" style="--i:1">${esc(title)}</h3>
-      <div class="board">${tiles}</div>
-      ${calls}
-      <p class="final-note">Saving makes it official: the results and season standings update for everyone.</p>
-    </section>`;
 }
 
 // ---- Sheets

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreWeek, scoreSeason, miss, isFlip, runningTally } from '../js/scoring.js';
+import { scoreWeek, scoreSeason, miss, isFlip } from '../js/scoring.js';
 
 // Week 3 of 2026: real DraftKings lines (home-team spreads) and the sample guesses
 // shown in the design mockups. The mockups say Mike 7, Spyro 6, Nick 2.
@@ -93,21 +93,4 @@ test('the reveal waits for regulars and newcomers, not for a guest who stopped s
   assert.ok(expectedPlayers({ players, guesses: back, lastWeek: week4, lastGuesses }).includes('nick'));
   // First week ever: everyone counts.
   assert.equal(expectedPlayers({ players, guesses: {}, lastWeek: null, lastGuesses: {} }).length, 4);
-});
-
-test('the reveal scoreboard only counts the games read out so far', () => {
-  const week = {
-    games: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
-    lines: { a: -3, b: 7, c: -1 },
-  };
-  const guesses = {
-    spyro: { picks: { a: -3, b: 3, c: -1 } },
-    mike: { picks: { a: -6, b: 6.5, c: -1 } },
-    nick: { picks: {} }, // joined but never picked: not on the board
-  };
-  const at = (n) => Object.fromEntries(runningTally(week, guesses, n).map((t) => [t.playerId, t.won]));
-  assert.deepEqual(at(0), { spyro: 0, mike: 0 });
-  assert.deepEqual(at(1), { spyro: 1, mike: 0 });
-  assert.deepEqual(at(2), { spyro: 1, mike: 1 });
-  assert.deepEqual(at(3), { spyro: 1.5, mike: 1.5 }); // tie on the last game splits it
 });
