@@ -1,10 +1,10 @@
-import * as config from './config.js?v=gtl2'; // a namespace, so a phone with an older cached config still loads
-import { LocalStore, createFirestoreStore } from './store.js?v=gtl2';
-import * as espn from './espn.js?v=gtl2';
-import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js?v=gtl2';
-import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js?v=gtl2';
-import { morphInto } from './morph.js?v=gtl2';
-import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, num, randomKey, slug, stamp, wins } from './util.js?v=gtl2';
+import * as config from './config.js?v=gtl3'; // a namespace, so a phone with an older cached config still loads
+import { LocalStore, createFirestoreStore } from './store.js?v=gtl3';
+import * as espn from './espn.js?v=gtl3';
+import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js?v=gtl3';
+import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js?v=gtl3';
+import { morphInto } from './morph.js?v=gtl3';
+import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, logoUrl, num, randomKey, slug, stamp, wins } from './util.js?v=gtl3';
 
 const main = document.getElementById('main');
 const foot = document.getElementById('foot');
@@ -968,9 +968,13 @@ function gameRow(g, revealed, own = []) {
     </article>`;
 }
 
+// The team's real logo; alt is the abbreviation, so if the image ever fails "BUF" shows instead.
+const logo = (t, px, cls = 'logo') =>
+  `<img class="${cls}" src="${logoUrl(t.abbr, px * 3)}" alt="${esc(t.abbr)}" width="${px}" height="${px}" decoding="async">`;
+
 function teamBtn(g, side, on, ro) {
   const t = g[side];
-  return `<button class="team${on ? ' is-fav' : ''}" data-act="team" data-g="${esc(g.id)}" data-side="${side}" aria-pressed="${on}" aria-label="${esc(t.name)} favored" ${ro ? 'disabled' : ''}><b>${esc(t.abbr)}</b><small>${esc(t.name)}</small></button>`;
+  return `<button class="team${on ? ' is-fav' : ''}" data-act="team" data-g="${esc(g.id)}" data-side="${side}" aria-pressed="${on}" aria-label="${esc(t.name)} favored" ${ro ? 'disabled' : ''}>${logo(t, 28)}<small>${esc(t.name)}</small></button>`;
 }
 
 function dock() {
@@ -1090,7 +1094,7 @@ function resultRow(w, { game: g, line, cells }, order, own, a) {
     .join('');
   return `<article class="result${a.cls}"${a.style} data-key="r-${esc(g.id)}">
       <div class="result-top">
-        <div class="matchup">${esc(g.away.abbr)}<i>${g.neutral ? 'vs' : '@'}</i>${esc(g.home.abbr)}${badgeHtml(own)}</div>
+        <div class="matchup">${logo(g.away, 22, 'mini-logo')}${esc(g.away.abbr)}<i>${g.neutral ? 'vs' : '@'}</i>${logo(g.home, 22, 'mini-logo')}${esc(g.home.abbr)}${badgeHtml(own)}</div>
         <button class="line${edited ? ' is-edited' : ''}" data-act="edit-line" data-g="${esc(g.id)}" data-w="${esc(w.id)}" aria-label="Line ${esc(lineText(g, line))}${edited ? ', edited' : ''}. Tap to fix it"><small>${edited ? 'Edited' : 'Line'}</small><b>${esc(lineText(g, line))}</b></button>
       </div>
       ${line == null ? '<p class="noline">ESPN had no line for this one. Tap the line to add it.</p>' : `<div class="cells">${cellHtml}</div>`}
@@ -1258,9 +1262,9 @@ function deckGame(w, g, at, ids) {
   return `<section class="stage" data-key="slide-${esc(w.id)}-${at}">
       <div class="stage-meta">${badgeHtml(gameBadges(g))}<span>${esc(kickoff(g.kickoff))}${g.tv ? ` · ${esc(g.tv)}` : ''}</span></div>
       <div class="duel" role="heading" aria-level="3">
-        <div class="duel-team"><b>${esc(g.away.abbr)}</b><small>${esc(g.away.name)}</small></div>
+        <div class="duel-team">${logo(g.away, 120, 'duel-logo')}<b>${esc(g.away.name)}</b></div>
         <span class="duel-at">${g.neutral ? 'vs' : '@'}</span>
-        <div class="duel-team"><b>${esc(g.home.abbr)}</b><small>${esc(g.home.name)}</small></div>
+        <div class="duel-team">${logo(g.home, 120, 'duel-logo')}<b>${esc(g.home.name)}</b></div>
       </div>
       <p class="tease">${esc(tease)}</p>
       <div class="guesses">${rows}</div>

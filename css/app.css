@@ -275,6 +275,9 @@ svg { flex: none; }
   color: var(--text);
 }
 .team b { font: 700 20px/1 var(--cond); letter-spacing: 0.04em; }
+.logo { width: 28px; height: 28px; object-fit: contain; font: 700 16px/28px var(--cond); text-align: center; }
+.mini-logo { width: 22px; height: 22px; margin-right: 5px; object-fit: contain; vertical-align: -4px; font-size: 0; }
+.matchup i + .mini-logo { margin-left: 2px; }
 .team small {
   max-width: 58px;
   overflow: hidden;
@@ -692,8 +695,8 @@ body.is-deck { overflow: hidden; }
   color: var(--muted);
 }
 .duel { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; text-align: center; }
-.duel-team b { display: block; font: 700 clamp(58px, 18vw, 112px)/0.9 var(--cond); letter-spacing: 0.02em; }
-.duel-team small { display: block; margin-top: 7px; font: 600 13px/1.1 var(--body); color: var(--muted); }
+.duel-logo { display: block; width: clamp(88px, 27vw, 150px); height: clamp(88px, 27vw, 150px); margin: 0 auto; object-fit: contain; filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.55)); font: 700 48px/1 var(--cond); text-align: center; }
+.duel-team b { display: block; margin-top: 10px; font: 700 clamp(22px, 7vw, 38px)/1 var(--cond); letter-spacing: 0.05em; text-transform: uppercase; }
 .duel-at { font: 600 15px/1 var(--mono); color: var(--muted); }
 .tease { min-height: 14px; margin: -6px 0 0; text-align: center; font: 600 12px/1.2 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--orange); }
 
@@ -802,7 +805,8 @@ body.is-deck { overflow: hidden; }
   .guesses { grid-area: guesses; }
   .vegas { grid-area: vegas; }
   .say { grid-area: say; align-self: start; }
-  .duel-team b { font-size: 120px; }
+  .duel-logo { width: 170px; height: 170px; }
+  .duel-team b { font-size: 44px; }
   .guess { padding: 16px 20px; }
   .guess-name { font-size: 24px; }
   .guess-pick { font-size: 32px; }

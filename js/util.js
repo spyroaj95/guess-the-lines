@@ -71,6 +71,11 @@ export function dateRange(fromIso, toIso) {
   }
 }
 
+// A team's logo from ESPN's CDN: the version drawn for dark backgrounds, resized by ESPN's
+// image service to `size` pixels so a phone downloads a few KB per team.
+export const logoUrl = (abbr, size = 96) =>
+  `https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500-dark/${String(abbr).toLowerCase()}.png&h=${size}&w=${size}`;
+
 export const initials = (name) =>
   String(name || '')
     .split(/\s+/)
