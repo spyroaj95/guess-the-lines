@@ -5,7 +5,7 @@
 // Layout (Firestore paths shown; LocalStore mirrors them in one JSON blob):
 //   leagues/{key}                         – key is random and only exists in the invite link
 //   leagues/{key}/players/{playerId}      – { name, joinedAt }
-//   leagues/{key}/weeks/{weekId}          – { label, games[], lines{}, lineFrom{}, revealedAt, ... }
+//   leagues/{key}/weeks/{weekId}          – { label, games[], lines{}, lineFrom{}, revealedAt, stage, ... }
 //   leagues/{key}/weeks/{weekId}/guesses/{playerId} – { name, picks{}, lockedAt, readyAt }
 
 const FIREBASE_VERSION = '12.19.0';
@@ -95,6 +95,12 @@ export class LocalStore {
     if (!w) return;
     w.lines = { ...(w.lines || {}), [gameId]: value };
     w.edited = { ...(w.edited || {}), [gameId]: true };
+    this.write(db);
+  }
+  async setStage(id, stage) {
+    const db = this.read();
+    if (!db.weeks[id]) return;
+    db.weeks[id].stage = stage;
     this.write(db);
   }
   async refreshLines(id, changes, times) {
@@ -208,6 +214,10 @@ class FirestoreStore {
   async setLine(id, gameId, value) {
     const { updateDoc, FieldPath } = this.fs;
     await updateDoc(this.ref('weeks', id), new FieldPath('lines', gameId), value, new FieldPath('edited', gameId), true);
+  }
+  // Where the reveal deck is (the week doc's `stage`). Only Spyro's phone writes it.
+  async setStage(id, stage) {
+    await this.fs.updateDoc(this.ref('weeks', id), { stage });
   }
   async refreshLines(id, changes, times) {
     const { runTransaction } = this.fs;

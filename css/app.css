@@ -1,7 +1,8 @@
 /* Guess the Lines — "The Board".
    A dark sportsbook board. Amber is you, green is whoever was closest, everything else stays
    quiet. Numbers are monospaced so they line up; labels are condensed caps. Indigo marks the
-   night games, sky blue the ones played abroad. */
+   night games, sky blue the ones played abroad. Behind it all: a turf field under stadium
+   lights, with a little Jersey Shore sunset for GTL. */
 
 :root {
   --bg: #0a0d12;
@@ -48,11 +49,29 @@ html { background: var(--bg); -webkit-text-size-adjust: 100%; text-size-adjust: 
 body {
   margin: 0;
   min-height: 100dvh;
-  background: var(--bg);
+  background: transparent; /* the field below shows through */
   color: var(--text);
   font: 400 15px/1.4 var(--body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+/* The field: stadium lights and a sunset glow over dark turf, yard lines every 5 "yards". */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='260' viewBox='0 0 600 260'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%23fbbf24'/%3E%3Cstop offset='.55' stop-color='%23fb923c'/%3E%3Cstop offset='1' stop-color='%23f472b6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='300' cy='130' r='122' fill='none' stroke='white' stroke-opacity='.07' stroke-width='4'/%3E%3Ctext x='300' y='172' text-anchor='middle' font-family='Impact,Haettenschweiler,Arial Narrow Bold,sans-serif' font-size='132' font-weight='900' letter-spacing='6' fill='url(%23g)' fill-opacity='.13'%3EGTL%3C/text%3E%3C/svg%3E") center 55% / min(92vw, 560px) auto no-repeat,
+    radial-gradient(55% 34% at 14% -4%, rgba(255, 240, 200, 0.3), transparent 70%),
+    radial-gradient(55% 34% at 86% -4%, rgba(255, 240, 200, 0.26), transparent 70%),
+    radial-gradient(90% 45% at 100% 105%, rgba(244, 114, 182, 0.14), transparent 70%),
+    radial-gradient(90% 45% at 0% 105%, rgba(251, 146, 60, 0.12), transparent 70%),
+    linear-gradient(90deg, transparent 0 18px, rgba(255, 255, 255, 0.06) 18px 20px, transparent 20px calc(100% - 20px), rgba(255, 255, 255, 0.06) calc(100% - 20px) calc(100% - 18px), transparent calc(100% - 18px)),
+    repeating-linear-gradient(180deg, transparent 0 110px, rgba(255, 255, 255, 0.07) 110px 112px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.012) 0 56px, transparent 56px 112px),
+    linear-gradient(180deg, #0d2318 0%, #0a1912 45%, #08110d 100%);
 }
 button,
 input { font: inherit; color: inherit; }
@@ -103,7 +122,15 @@ svg { flex: none; }
 .top { padding: calc(env(safe-area-inset-top) + 18px) 20px 0; }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-mark { width: 24px; height: 24px; border-radius: 6px; }
-.brand-name { font: 700 14px/1 var(--cond); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2); }
+.brand-name {
+  font: 700 21px/1 var(--cond);
+  letter-spacing: 0.12em;
+  background: linear-gradient(90deg, var(--amber) 0%, #fb923c 55%, #f472b6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.brand-tag { font: 600 10px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .hero { margin-top: 22px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .title { margin: 0; font: 700 44px/0.9 var(--cond); letter-spacing: 0.01em; text-transform: uppercase; }
 .subtitle { margin: 9px 0 0; font-size: 13.5px; color: var(--muted); }
@@ -568,6 +595,221 @@ svg { flex: none; }
 .lead { margin: 0; font-size: 17px; line-height: 1.5; color: var(--text-2); }
 .fine { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .noscript { padding: 24px; color: var(--text-2); }
+
+/* ---------- the reveal deck ---------- */
+/* After Go: one game per slide. The guesses come in, then (on a timer) the line card flips, the
+   misses show, the closest guess lights up and the scoreboard ticks. Each slide is a fresh
+   element, so the timeline replays on every Next. */
+
+body.is-deck { overflow: hidden; }
+.deck-wrap {
+  --flip: 1.4s; /* the line flips */
+  --after: 2.2s; /* winner, misses, scoreboard */
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background:
+    radial-gradient(80% 45% at 50% -8%, rgba(255, 236, 179, 0.22), transparent 70%),
+    radial-gradient(70% 40% at 100% 105%, rgba(244, 114, 182, 0.16), transparent 70%),
+    radial-gradient(70% 40% at 0% 105%, rgba(251, 146, 60, 0.14), transparent 70%),
+    #070c0a;
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.32s var(--ease), transform 0.32s var(--ease);
+}
+.deck-wrap[hidden] { display: none; }
+.deck-wrap.is-open { opacity: 1; transform: none; }
+.deck {
+  max-width: 640px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding-top: calc(env(safe-area-inset-top) + 8px);
+  display: flex;
+  flex-direction: column;
+}
+.show-top { height: 48px; padding: 0 16px 0 6px; display: flex; align-items: center; gap: 8px; }
+.show-x { width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 22px; background: none; color: var(--text-2); }
+.show-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: 700 15px/1 var(--cond);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.gtl {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--amber), #fb923c 55%, #f472b6);
+  color: #1b0a12;
+  font: 800 13px/1 var(--cond);
+  letter-spacing: 0.12em;
+}
+.show-count { font: 600 12px/1 var(--mono); letter-spacing: 0.06em; color: var(--muted); }
+.ticks { display: flex; gap: 3px; padding: 4px 16px 0; }
+.tick { flex: 1; height: 3px; border-radius: 2px; background: var(--hair-2); transition: background-color 0.35s var(--ease); }
+.tick.is-done { background: var(--text-2); }
+.tick.is-now { background: var(--amber); }
+.score { display: flex; gap: 8px; padding: 14px 16px 0; overflow-x: auto; scrollbar-width: none; }
+.sc {
+  flex: 1 0 96px;
+  min-width: 0;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--hair);
+  background: rgba(18, 23, 32, 0.85);
+}
+.sc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 16px/1 var(--cond); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-2); }
+.sc.is-me .sc-name { color: var(--amber-2); }
+.sc-num { display: inline-grid; font: 700 22px/1 var(--mono); }
+.sc-num > span { grid-area: 1 / 1; text-align: right; }
+.n-old { animation: num-out 0.25s var(--ease) var(--after) both; }
+.n-new { color: var(--green); animation: num-in 0.5s var(--pop) calc(var(--after) + 0.1s) both; }
+@keyframes num-out { to { opacity: 0; transform: translateY(-10px); } }
+@keyframes num-in { from { opacity: 0; transform: translateY(10px) scale(0.6); } }
+
+.stage { flex: 1; padding: 20px 16px 8px; display: flex; flex-direction: column; justify-content: center; gap: 16px; animation: stage-in 0.42s var(--ease) both; }
+@keyframes stage-in { from { opacity: 0; transform: translateX(28px); } }
+.stage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.duel { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; text-align: center; }
+.duel-team b { display: block; font: 700 clamp(58px, 18vw, 112px)/0.9 var(--cond); letter-spacing: 0.02em; }
+.duel-team small { display: block; margin-top: 7px; font: 600 13px/1.1 var(--body); color: var(--muted); }
+.duel-at { font: 600 15px/1 var(--mono); color: var(--muted); }
+.tease { min-height: 14px; margin: -6px 0 0; text-align: center; font: 600 12px/1.2 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--orange); }
+
+.guesses { display: flex; flex-direction: column; gap: 8px; }
+.guess {
+  position: relative;
+  padding: 13px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'who off pick';
+  align-items: center;
+  column-gap: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--hair);
+  background: var(--panel);
+  animation: rise 0.5s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+}
+.guess.is-win {
+  animation: rise 0.5s var(--ease) calc(var(--i, 0) * 90ms + 120ms) both, win 0.45s var(--ease) var(--after) both;
+}
+@keyframes win { from { background: var(--panel); border-color: var(--hair); } to { background: var(--green-wash); border-color: var(--green-edge); } }
+.guess-who { grid-area: who; min-width: 0; }
+.guess-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 19px/1 var(--cond); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-2); }
+.guess-pick { grid-area: pick; white-space: nowrap; font: 700 23px/1 var(--mono); }
+.guess-off { grid-area: off; white-space: nowrap; font: 600 12px/1 var(--mono); letter-spacing: 0.04em; color: var(--muted); animation: fade 0.3s var(--ease) var(--after) both; }
+.guess .flag { margin-top: 5px; animation: fade 0.3s var(--ease) var(--after) both; }
+.guess.is-me .guess-name { color: var(--amber-2); }
+.guess.is-empty .guess-pick { color: var(--muted); }
+.guess.is-win .guess-name { animation: win-text 0.45s var(--ease) var(--after) both; }
+.guess.is-win .guess-off { animation: fade 0.3s var(--ease) var(--after) both, win-text 0.45s var(--ease) var(--after) both; }
+@keyframes win-text { from { color: var(--text-2); } to { color: var(--green-2); } }
+.plus {
+  position: absolute;
+  top: -9px;
+  right: 12px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: var(--green);
+  color: var(--on-green);
+  font: 700 12px/1 var(--mono);
+  animation: pop 0.5s var(--pop) calc(var(--after) + 0.1s) both;
+}
+@keyframes pop { 0% { transform: scale(0.4); opacity: 0; } 60% { transform: scale(1.2); opacity: 1; } }
+
+.vegas { perspective: 900px; }
+.vegas-card { position: relative; height: 122px; transform-style: preserve-3d; animation: flip 0.8s var(--pop) var(--flip) both; }
+@keyframes flip { from { transform: rotateX(0deg); } to { transform: rotateX(-180deg); } }
+.vegas-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 20px;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.vegas-face small { font: 600 11px/1 var(--body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.vegas-front { border: 1px dashed var(--hair-3); background: repeating-linear-gradient(135deg, var(--panel) 0 12px, var(--panel-2) 12px 24px); }
+.vegas-front b { font: 700 46px/1 var(--mono); color: var(--muted); }
+.vegas-back { transform: rotateX(180deg); border: 1px solid var(--amber-edge); background: var(--raise); box-shadow: 0 0 40px -12px rgba(251, 191, 36, 0.45); }
+.vegas-back b { font: 700 clamp(40px, 12vw, 64px)/1 var(--mono); color: var(--text); }
+.vegas-back.is-none { border-style: dashed; border-color: var(--hair-3); box-shadow: none; }
+.vegas-back.is-none b { font: 700 30px/1 var(--cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.say { min-height: 24px; margin: 0; text-align: center; font: 700 22px/1.1 var(--cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--green-2); animation: rise 0.4s var(--ease) calc(var(--after) + 0.15s) both; }
+.say.is-quiet { font: 500 14px/1.4 var(--body); letter-spacing: 0; text-transform: none; color: var(--muted); }
+
+.final { justify-content: flex-start; text-align: center; }
+.final .eyebrow { color: var(--green-2); }
+.final-who { margin: -6px 0 0; font: 700 clamp(38px, 11vw, 64px)/0.95 var(--cond); letter-spacing: 0.02em; text-transform: uppercase; }
+.final .board { padding: 0; text-align: left; }
+
+.show-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 10px;
+  background: linear-gradient(to top, #070c0a 70%, rgba(7, 12, 10, 0));
+}
+.show-foot .btn { height: 56px; }
+.show-back { width: 56px; flex: none; padding: 0; }
+.show-back:disabled { opacity: 0.3; }
+.show-next { flex: 1; font-size: 20px; }
+.deck-wait { flex: 1; margin: 0; padding: 18px 0; text-align: center; font: 600 12px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.btn-go { min-width: 92px; font-size: 20px; background: linear-gradient(90deg, var(--amber), #fb923c 55%, #f472b6); border-color: transparent; color: #1b0a12; box-shadow: 0 8px 24px -10px rgba(244, 114, 182, 0.7); }
+
+/* A laptop on the TV: the line card sits beside the guesses so a game fits on a 16:9 screen. */
+@media (min-width: 760px) and (min-height: 560px) {
+  .deck { max-width: 1060px; }
+  .stage:not(.final) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: 'meta meta' 'duel duel' 'tease tease' 'guesses vegas' 'guesses say';
+    grid-template-rows: auto auto auto auto 1fr;
+    align-content: center;
+    gap: 16px 28px;
+  }
+  .stage-meta { grid-area: meta; }
+  .duel { grid-area: duel; }
+  .tease { grid-area: tease; }
+  .guesses { grid-area: guesses; }
+  .vegas { grid-area: vegas; }
+  .say { grid-area: say; align-self: start; }
+  .duel-team b { font-size: 120px; }
+  .guess { padding: 16px 20px; }
+  .guess-name { font-size: 24px; }
+  .guess-pick { font-size: 32px; }
+  .vegas-card { height: 168px; }
+  .vegas-back b { font-size: 84px; }
+  .say { font-size: 30px; }
+}
 
 /* ---------- sheets ---------- */
 

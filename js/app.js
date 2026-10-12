@@ -1,13 +1,14 @@
-import * as config from './config.js'; // a namespace, so a phone with an older cached config still loads
-import { LocalStore, createFirestoreStore } from './store.js';
-import * as espn from './espn.js';
-import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js';
-import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js';
-import { morphInto } from './morph.js';
-import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, num, randomKey, slug, stamp, wins } from './util.js';
+import * as config from './config.js?v=gtl1'; // a namespace, so a phone with an older cached config still loads
+import { LocalStore, createFirestoreStore } from './store.js?v=gtl1';
+import * as espn from './espn.js?v=gtl1';
+import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js?v=gtl1';
+import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js?v=gtl1';
+import { morphInto } from './morph.js?v=gtl1';
+import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, num, randomKey, slug, stamp, wins } from './util.js?v=gtl1';
 
 const main = document.getElementById('main');
 const foot = document.getElementById('foot');
+const deckEl = document.getElementById('deck');
 const sheetEl = document.getElementById('sheet');
 const toastEl = document.getElementById('toast');
 
@@ -25,6 +26,7 @@ const ICON = {
   checkSm: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 11, 3.2, '#34D399'),
   link: svg('<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>', 17, 2),
   phone: svg('<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>', 17, 2),
+  close: svg('<path d="M6 6l12 12M18 6L6 18"/>', 20, 2.2),
   globe: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9s1.2-6.4 3.8-9z"/>', 11, 2.2),
   target:
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="#34D399"/></svg>',
@@ -59,6 +61,8 @@ const S = {
   seasonToken: 0,
   guessCache: {}, // revealed weeks' guesses, for deciding who the reveal waits on
   justRevealed: null,
+  deckOpen: false, // the reveal deck is on screen on this phone
+  deckOut: {}, // weeks whose deck this phone closed
   // UI
   sheet: null,
   sheetTimer: null,
@@ -82,6 +86,9 @@ const revealedIds = () =>
     .filter((w) => w.revealedAt)
     .map((w) => w.id)
     .sort();
+const hasPicks = (id) => Object.keys(S.guesses[id]?.picks || {}).length > 0;
+// Where the reveal deck is: a game index, the final score (= number of games), or null when off.
+const deckAt = (w) => (w?.revealedAt && Number.isInteger(w.stage) && w.stage >= 0 ? w.stage : null);
 const haptic = (pattern = 8) => {
   try {
     navigator.vibrate?.(pattern);
@@ -164,8 +171,7 @@ async function openWeek(idx) {
   S.unsub.week = S.store.watchWeek(w.id, (doc) => {
     const before = S.week;
     S.week = doc;
-    // Whoever taps Reveal, every phone at the table flips to the results with them.
-    if (before && !before.revealedAt && doc?.revealedAt && S.tab === 'week' && S.busy !== 'reveal') showFreshResults(doc.id);
+    syncDeck(before, doc);
     refreshLines(doc);
     render();
   });
@@ -294,7 +300,13 @@ async function setLocked(on) {
 // Nobody reveals alone. Everyone with picks this week taps Ready once you're all together, and
 // only then does Reveal unlock.
 function notReady() {
-  return Object.keys(S.guesses).filter((id) => Object.keys(S.guesses[id]?.picks || {}).length > 0 && !S.guesses[id]?.readyAt);
+  return Object.keys(S.guesses).filter((id) => hasPicks(id) && !S.guesses[id]?.readyAt);
+}
+
+// Spyro runs the reveal: the league's first player who has picks this week gets the Go button.
+function hostId() {
+  const joinedAt = (id) => S.players[id]?.joinedAt ?? Infinity;
+  return Object.keys(S.guesses).filter(hasPicks).sort((a, b) => joinedAt(a) - joinedAt(b) || a.localeCompare(b))[0] || null;
 }
 
 async function setReady(on) {
@@ -314,6 +326,7 @@ async function reveal() {
   if (!w || !S.week || S.busy) return;
   const unready = notReady().map(nameOf);
   if (unready.length) return toast(`Waiting on ${listNames(unready)} to tap Ready.`);
+  if (S.meId !== hostId()) return toast(`${nameOf(hostId())} hits Go.`);
   const waiting = waitingOn().map(nameOf);
   if (
     waiting.length &&
@@ -334,9 +347,9 @@ async function reveal() {
     const used = Object.values(from);
     const lineAsOf = used.includes('mon') ? times.mon : used.includes('sun') ? times.sun : Date.now();
     const lineSource = snaps?.mon?.source || snaps?.sun?.source || fresh.find((g) => g.lineSource)?.lineSource || 'ESPN';
-    await S.store.reveal(w.id, { lines, lineFrom: from, lineSnaps: times, lineSource, lineAsOf });
+    // stage 0 puts every phone on the first game of the reveal deck.
+    await S.store.reveal(w.id, { lines, lineFrom: from, lineSnaps: times, lineSource, lineAsOf, stage: 0 });
     haptic([12, 60, 18]);
-    showFreshResults(w.id);
   } catch (err) {
     console.error(err);
     toast('Couldn’t reach the server. Try again in a minute.');
@@ -344,6 +357,54 @@ async function reveal() {
     S.busy = null;
     render();
   }
+}
+
+// ---------------------------------------------------------------- the reveal deck
+//
+// After Go, every phone shows the same game: everyone's guess, then the line flips over and the
+// closest guess lights up. Spyro taps Next; the deck's position is the week doc's `stage`.
+
+function syncDeck(before, doc) {
+  const live = deckAt(doc) != null;
+  if (live && !S.deckOpen && !S.deckOut[doc.id]) S.deckOpen = true;
+  if (!live && deckAt(before) != null) {
+    // Spyro hit Done: everyone lands on the results.
+    S.deckOpen = false;
+    if (doc?.revealedAt) openResultsTab(doc.id);
+  } else if (!live && before && !before.revealedAt && doc?.revealedAt && S.tab === 'week') showFreshResults(doc.id);
+}
+
+async function moveDeck(to) {
+  const w = S.week;
+  const at = deckAt(w);
+  if (at == null || S.meId !== hostId() || to < 0 || to > w.games.length || to === at) return;
+  S.week = { ...w, stage: to }; // move this phone now; the others follow the server
+  haptic(to > at ? [10, 40, 16] : 6);
+  render();
+  try {
+    await S.store.setStage(w.id, to);
+  } catch (err) {
+    console.error(err);
+    toast('Couldn’t reach the server. Try again.');
+  }
+}
+
+async function finishDeck() {
+  const w = S.week;
+  if (deckAt(w) == null || S.meId !== hostId()) return;
+  try {
+    await S.store.setStage(w.id, -1);
+    haptic([12, 60, 18]);
+  } catch (err) {
+    console.error(err);
+    toast('Couldn’t reach the server. Try again.');
+  }
+}
+
+function openResultsTab(id) {
+  S.tab = 'results';
+  openResults(id);
+  window.scrollTo({ top: 0 });
 }
 
 // Right after a reveal, the board fills in one game at a time, like Sal reading them out.
@@ -621,6 +682,17 @@ document.addEventListener('click', (e) => {
     case 'ready': return setReady(true);
     case 'unready': return setReady(false);
     case 'reveal': return reveal();
+    case 'deck-next': return moveDeck((deckAt(S.week) ?? 0) + 1);
+    case 'deck-back': return moveDeck((deckAt(S.week) ?? 0) - 1);
+    case 'deck-finish': return finishDeck();
+    case 'deck-close':
+      if (S.week) S.deckOut[S.week.id] = true;
+      S.deckOpen = false;
+      return render();
+    case 'deck-open':
+      if (S.week) delete S.deckOut[S.week.id];
+      S.deckOpen = deckAt(S.week) != null;
+      return render();
     case 'tab': return setTab(d.tab);
     case 'week-prev': return openWeek(S.weekIdx - 1);
     case 'week-next': return openWeek(S.weekIdx + 1);
@@ -635,7 +707,7 @@ document.addEventListener('click', (e) => {
     case 'add-player': return openSheet({ type: 'add' });
     case 'copy-link': return copyLink();
     case 'share-link':
-      return navigator.share?.({ title: 'Guess the Lines', text: 'Join our Guess the Lines league', url: inviteUrl() }).catch(() => {});
+      return navigator.share?.({ title: 'GTL', text: 'Join our GTL league (Guess the Lines)', url: inviteUrl() }).catch(() => {});
     case 'close-sheet': return closeSheet();
     case 'start-league': return useLeague(randomKey());
     case 'reload': return location.reload();
@@ -658,7 +730,23 @@ document.addEventListener('submit', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && S.sheet) closeSheet();
+  if (e.key === 'Escape' && S.sheet) return closeSheet();
+  if (!S.deckOpen || S.sheet || e.metaKey || e.ctrlKey || e.altKey) return;
+  // On a laptop hooked up to the TV: arrows or space run the deck.
+  const at = deckAt(S.week);
+  const onControl = e.target.closest?.('button, input, a');
+  if (e.key === 'ArrowRight' || (!onControl && (e.key === ' ' || e.key === 'Enter'))) {
+    e.preventDefault();
+    if (at != null && at >= S.week.games.length) finishDeck();
+    else if (at != null) moveDeck(at + 1);
+  } else if (e.key === 'ArrowLeft' && at != null) {
+    e.preventDefault();
+    moveDeck(at - 1);
+  } else if (e.key === 'Escape') {
+    if (S.week) S.deckOut[S.week.id] = true;
+    S.deckOpen = false;
+    render();
+  }
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return flushNow();
@@ -691,6 +779,29 @@ function render() {
   const view = S.tab === 'results' ? viewResults() : S.tab === 'season' ? viewSeason() : viewWeek();
   morphInto(main, (S.live ? '' : '<p class="demo"><b>DEMO MODE</b> · saved on this device only</p>') + view);
   morphInto(foot, (S.tab === 'week' ? dock() : '') + tabBar());
+  renderDeck();
+}
+
+let deckTimer;
+function renderDeck() {
+  if (S.deckOpen && deckAt(S.week) != null) {
+    clearTimeout(deckTimer);
+    if (deckEl.hidden) {
+      deckEl.innerHTML = deckView();
+      deckEl.hidden = false;
+    } else morphInto(deckEl, deckView());
+    document.body.classList.add('is-deck');
+    if (!deckEl.classList.contains('is-open')) {
+      requestAnimationFrame(() => requestAnimationFrame(() => S.deckOpen && deckEl.classList.add('is-open')));
+    }
+  } else if (!deckEl.hidden && deckEl.classList.contains('is-open')) {
+    document.body.classList.remove('is-deck');
+    deckEl.classList.remove('is-open');
+    deckTimer = setTimeout(() => {
+      deckEl.hidden = true;
+      deckEl.innerHTML = '';
+    }, 340);
+  }
 }
 
 const view = (key, html) => `<div class="view" data-key="${esc(key)}">${html}</div>`;
@@ -705,7 +816,7 @@ function top({ title, sub = '', meta = '', pager = null }) {
     : '';
   return `<div class="minibar" aria-hidden="true"><span class="minibar-title">${esc(title)}</span><span class="minibar-meta">${esc(meta)}</span></div>
     <header class="top">
-      <div class="brand">${MARK}<span class="brand-name">Guess the Lines</span></div>
+      <div class="brand">${MARK}<span class="brand-name">GTL</span><span class="brand-tag">Guess · the · Lines</span></div>
       <div class="hero">
         <div><h1 class="title">${esc(title)}</h1>${sub ? `<p class="subtitle">${sub}</p>` : ''}</div>
         ${nav}
@@ -756,8 +867,8 @@ function renderLanding() {
   main.innerHTML = `
     <section class="landing">
       ${MARK}
-      <h1 class="title">Guess the Lines</h1>
-      <p class="lead">Guess every NFL spread before Vegas posts it. Closest guess takes the game, most games takes the week.</p>
+      <h1 class="title">GTL</h1>
+      <p class="lead">Guess · the · Lines. Guess every NFL spread before Vegas posts it. Closest guess takes the game, most games takes the week.</p>
       <button class="btn btn-primary btn-block" data-act="start-league">Start a league</button>
       <p class="fine">Got an invite from a friend? Open their link, or paste it here.</p>
       <form class="form-row" data-form="invite" autocomplete="off">
@@ -870,6 +981,9 @@ function dock() {
   const bar = (txt, buttons, full) =>
     `<div class="dock"><span class="meter${full ? ' is-full' : ''}" style="--p:${full ? 100 : pct}%"></span><div class="dock-txt">${txt}</div>${buttons}</div>`;
   if (S.week?.revealedAt) {
+    if (deckAt(S.week) != null) {
+      return bar(`<b>Reveal is on</b><small>${esc(nameOf(hostId()))} is running it.</small>`, '<button class="btn btn-primary" data-act="deck-open">Watch</button>', true);
+    }
     return bar('<b>Lines are out</b><small>See who was closest.</small>', '<button class="btn btn-primary" data-act="tab" data-tab="results">Results</button>', true);
   }
   if (!myGuess()?.lockedAt) {
@@ -889,19 +1003,24 @@ function dock() {
       true,
     );
   }
+  const host = hostId();
+  const amHost = S.meId === host;
   const unready = notReady().map(nameOf);
   if (unready.length) {
     return bar(
       `<b>You’re ready</b><small>${esc(`Waiting on ${listNames(unready)}.`)}</small>`,
-      '<button class="btn btn-quiet" data-act="unready">Not yet</button><button class="btn" disabled>Reveal</button>',
+      `<button class="btn btn-quiet" data-act="unready">Not yet</button>${amHost ? '<button class="btn" disabled>Go</button>' : ''}`,
       true,
     );
   }
-  const revealBtn =
+  if (!amHost) {
+    return bar(`<b>Everyone’s here</b><small>${esc(`${nameOf(host)} hits Go.`)}</small>`, '<button class="btn btn-quiet" data-act="unready">Not yet</button>', true);
+  }
+  const goBtn =
     S.busy === 'reveal'
-      ? '<button class="btn btn-primary" disabled><span class="spinner" aria-hidden="true"></span>Revealing</button>'
-      : '<button class="btn btn-primary" data-act="reveal">Reveal</button>';
-  return bar('<b>Everyone’s here</b><small>Reveal the lines together.</small>', `<button class="btn btn-quiet" data-act="unready">Not yet</button>${revealBtn}`, true);
+      ? '<button class="btn btn-primary" disabled><span class="spinner" aria-hidden="true"></span>Starting</button>'
+      : '<button class="btn btn-primary btn-go" data-act="reveal">Go</button>';
+  return bar('<b>Everyone’s here</b><small>Hit Go to start the reveal.</small>', `<button class="btn btn-quiet" data-act="unready">Not yet</button>${goBtn}`, true);
 }
 
 // ---- Results
@@ -1055,6 +1174,127 @@ function viewSeason() {
      <h2 class="section">By week</h2><div class="weeks">${weeks}</div>
      <h2 class="section">Highlights</h2><div class="calls">${call(best, true)}${call(worst, false)}</div>`,
   );
+}
+
+// ---- The reveal deck
+
+// Everyone with picks this week, in the same order as the player chips.
+function deckPlayers() {
+  const ids = sortedPlayers().filter(hasPicks);
+  return [...ids, ...Object.keys(S.guesses).filter((id) => hasPicks(id) && !ids.includes(id))];
+}
+
+// Games won over the first k games of the deck.
+function tally(w, games, k) {
+  const r = scoreWeek({ games: games.slice(0, k), lines: w.lines }, S.guesses);
+  return Object.fromEntries(r.players.map((p) => [p.playerId, p.won]));
+}
+
+function deckView() {
+  const w = S.week;
+  const at = deckAt(w);
+  const games = weekGames();
+  const n = games.length;
+  const final = at >= n;
+  const ids = deckPlayers();
+  const host = hostId();
+  const before = tally(w, games, Math.min(at, n));
+  const after = tally(w, games, Math.min(at + 1, n));
+  // The scoreboard ticks over once the line flips, not before.
+  const score = ids
+    .map((id) => {
+      const a = before[id] || 0;
+      const b = final ? a : after[id] || 0;
+      const shown = a === b ? `<b class="sc-num">${wins(b)}</b>` : `<b class="sc-num is-up"><span class="n-old">${wins(a)}</span><span class="n-new">${wins(b)}</span></b>`;
+      return `<div class="sc${id === S.meId ? ' is-me' : ''}" data-key="sc-${esc(id)}-${at}"><span class="sc-name">${esc(nameOf(id))}</span>${shown}</div>`;
+    })
+    .join('');
+  const ticks = games.map((g, i) => `<span class="tick${i < at ? ' is-done' : ''}${i === at ? ' is-now' : ''}"></span>`).join('');
+  const controls =
+    S.meId !== host
+      ? `<p class="deck-wait">${esc(nameOf(host))} is running the reveal</p>`
+      : final
+        ? `<button class="btn show-back" data-act="deck-back" aria-label="Back">${ICON.left}</button><button class="btn btn-primary show-next" data-act="deck-finish">Done</button>`
+        : `<button class="btn show-back" data-act="deck-back" aria-label="Back" ${at === 0 ? 'disabled' : ''}>${ICON.left}</button><button class="btn btn-primary show-next" data-act="deck-next">${at + 1 < n ? 'Next game' : 'Final score'}</button>`;
+  return `<div class="deck" role="dialog" aria-modal="true" aria-labelledby="deck-title">
+      <header class="show-top">
+        <button class="show-x" data-act="deck-close" aria-label="Close the reveal">${ICON.close}</button>
+        <h2 id="deck-title" class="show-title"><span class="gtl">GTL</span>${esc(weekTitle(curWeek()))} reveal</h2>
+        <span class="show-count">${final ? 'FINAL' : `${at + 1}/${n}`}</span>
+      </header>
+      <div class="ticks" aria-hidden="true">${ticks}</div>
+      <div class="score" aria-label="Games won">${score}</div>
+      ${final ? deckFinal(w, games) : deckGame(w, games[at], at, ids)}
+      <footer class="show-foot">${controls}</footer>
+    </div>`;
+}
+
+// One game: the matchup and everyone's guess, then (on a timer, in CSS) the line flips over,
+// the misses show, the closest guess lights up and the scoreboard ticks.
+function deckGame(w, g, at, ids) {
+  const line = w.lines?.[g.id] ?? null;
+  const r = line != null ? scoreWeek({ games: [g], lines: { [g.id]: line } }, S.guesses).games[0] : null;
+  const cell = Object.fromEntries((r?.cells || []).map((c) => [c.playerId, c]));
+  const share = r?.winners.length ? 1 / r.winners.length : 0;
+  const rows = ids
+    .map((id, i) => {
+      const pick = S.guesses[id]?.picks?.[g.id];
+      const c = cell[id];
+      const off = !r ? '' : !c ? '<div class="guess-off">no pick</div>' : c.exact ? `<div class="guess-off exact">${ICON.target}Exact</div>` : `<div class="guess-off">${num(c.miss)} off</div>`;
+      return `<div class="guess${id === S.meId ? ' is-me' : ''}${c?.win ? ' is-win' : ''}${pick == null ? ' is-empty' : ''}" style="--i:${i}"><div class="guess-who"><div class="guess-name">${esc(nameOf(id))}</div>${
+        c?.flip ? '<div class="flag">Wrong side</div>' : ''
+      }</div><div class="guess-pick">${pick == null ? '—' : esc(lineText(g, pick))}</div>${off}${c?.win ? `<span class="plus">+${wins(share)}</span>` : ''}</div>`;
+    })
+    .join('');
+  const picks = ids.map((id) => S.guesses[id]?.picks?.[g.id]).filter((v) => v != null);
+  const tease = picks.length > 1 && picks.some((v) => v < 0) && picks.some((v) => v > 0) ? 'Different favorites' : '';
+  let say = 'ESPN had no line for this one.';
+  if (r && !r.winners.length) say = 'Nobody guessed this one';
+  else if (r) {
+    const names = r.winners.map(nameOf);
+    const exact = r.cells.some((c) => c.win && c.exact);
+    say = r.winners.length === 1 ? `${names[0]} ${exact ? 'nails it' : 'takes it'}` : r.winners.length === r.cells.length ? 'Dead heat' : `${listNames(names)} split it`;
+  }
+  return `<section class="stage" data-key="slide-${esc(w.id)}-${at}">
+      <div class="stage-meta">${badgeHtml(gameBadges(g))}<span>${esc(kickoff(g.kickoff))}${g.tv ? ` · ${esc(g.tv)}` : ''}</span></div>
+      <div class="duel" role="heading" aria-level="3">
+        <div class="duel-team"><b>${esc(g.away.abbr)}</b><small>${esc(g.away.name)}</small></div>
+        <span class="duel-at">${g.neutral ? 'vs' : '@'}</span>
+        <div class="duel-team"><b>${esc(g.home.abbr)}</b><small>${esc(g.home.name)}</small></div>
+      </div>
+      <p class="tease">${esc(tease)}</p>
+      <div class="guesses">${rows}</div>
+      <div class="vegas">
+        <div class="vegas-card">
+          <div class="vegas-face vegas-front" aria-hidden="true"><small>The line</small><b>?</b></div>
+          <div class="vegas-face vegas-back${line == null ? ' is-none' : ''}"><small>The line${w.lineSource ? ` · ${esc(w.lineSource)}` : ''}</small><b>${line == null ? 'No line' : esc(lineText(g, line))}</b></div>
+        </div>
+      </div>
+      <p class="say${r ? '' : ' is-quiet'}">${esc(say)}</p>
+    </section>`;
+}
+
+function deckFinal(w, games) {
+  const r = scoreWeek({ ...w, games }, S.guesses);
+  const names = r.weekWinners.map(nameOf);
+  const title = !names.length ? 'No games scored' : names.length === 1 ? `${names[0]} wins the week` : `${listNames(names)} split the week`;
+  const tiles = r.players
+    .map((p, i) => {
+      const win = r.weekWinners.includes(p.playerId);
+      return `<div class="tile enter${win ? ' is-win' : ''}${p.playerId === S.meId ? ' is-me' : ''}" style="--i:${i + 2}">
+          <div class="tile-name">${esc(nameOf(p.playerId))}</div>
+          <div class="tile-num">${wins(p.won)}</div>
+          <div class="tile-cap">games won</div>
+          <div class="tile-cap mono">${avg(p.avg)} avg off</div>
+          ${p.exact ? `<div class="tile-cap">${p.exact} exact</div>` : ''}
+        </div>`;
+    })
+    .join('');
+  return `<section class="stage final" data-key="slide-${esc(w.id)}-final">
+      <div class="eyebrow enter" style="--i:0">Final</div>
+      <h3 class="final-who enter" style="--i:1">${esc(title)}</h3>
+      <div class="board">${tiles}</div>
+    </section>`;
 }
 
 // ---- Sheets
