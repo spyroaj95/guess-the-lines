@@ -79,7 +79,7 @@ The season table ranks by average miss, so joining late doesn't hurt anyone's st
 4. **Nobody reveals alone.** When you're together, everyone with picks taps **Ready** on their
    phone (a guest playing on your phone: switch to them and tap Ready for them). Tapped it too
    early? **Not yet** takes it back.
-5. Once everyone's Ready, the host (the league's first player, Spyro) gets a **Go** button.
+5. Once everyone's Ready, the Commissioner (the league's first player) gets a **Go** button.
 6. Go opens the reveal on every phone, one game at a time: the matchup and everyone's guess,
    then the line flips over, the closest guess lights up and the scoreboard ticks. The host taps
    **Next game** (or the arrow keys on a laptop); everyone else's phone follows. **✕** steps out,

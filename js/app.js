@@ -1,10 +1,10 @@
-import * as config from './config.js?v=gtl1'; // a namespace, so a phone with an older cached config still loads
-import { LocalStore, createFirestoreStore } from './store.js?v=gtl1';
-import * as espn from './espn.js?v=gtl1';
-import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js?v=gtl1';
-import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js?v=gtl1';
-import { morphInto } from './morph.js?v=gtl1';
-import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, num, randomKey, slug, stamp, wins } from './util.js?v=gtl1';
+import * as config from './config.js?v=gtl2'; // a namespace, so a phone with an older cached config still loads
+import { LocalStore, createFirestoreStore } from './store.js?v=gtl2';
+import * as espn from './espn.js?v=gtl2';
+import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js?v=gtl2';
+import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js?v=gtl2';
+import { morphInto } from './morph.js?v=gtl2';
+import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, num, randomKey, slug, stamp, wins } from './util.js?v=gtl2';
 
 const main = document.getElementById('main');
 const foot = document.getElementById('foot');
@@ -303,7 +303,7 @@ function notReady() {
   return Object.keys(S.guesses).filter((id) => hasPicks(id) && !S.guesses[id]?.readyAt);
 }
 
-// Spyro runs the reveal: the league's first player who has picks this week gets the Go button.
+// The Commissioner runs the reveal: the league's first player who has picks this week gets Go.
 function hostId() {
   const joinedAt = (id) => S.players[id]?.joinedAt ?? Infinity;
   return Object.keys(S.guesses).filter(hasPicks).sort((a, b) => joinedAt(a) - joinedAt(b) || a.localeCompare(b))[0] || null;
@@ -326,7 +326,7 @@ async function reveal() {
   if (!w || !S.week || S.busy) return;
   const unready = notReady().map(nameOf);
   if (unready.length) return toast(`Waiting on ${listNames(unready)} to tap Ready.`);
-  if (S.meId !== hostId()) return toast(`${nameOf(hostId())} hits Go.`);
+  if (S.meId !== hostId()) return toast('The Commissioner hits Go.');
   const waiting = waitingOn().map(nameOf);
   if (
     waiting.length &&
@@ -362,13 +362,13 @@ async function reveal() {
 // ---------------------------------------------------------------- the reveal deck
 //
 // After Go, every phone shows the same game: everyone's guess, then the line flips over and the
-// closest guess lights up. Spyro taps Next; the deck's position is the week doc's `stage`.
+// closest guess lights up. The Commissioner taps Next; the deck's position is the week doc's `stage`.
 
 function syncDeck(before, doc) {
   const live = deckAt(doc) != null;
   if (live && !S.deckOpen && !S.deckOut[doc.id]) S.deckOpen = true;
   if (!live && deckAt(before) != null) {
-    // Spyro hit Done: everyone lands on the results.
+    // The Commissioner hit Done: everyone lands on the results.
     S.deckOpen = false;
     if (doc?.revealedAt) openResultsTab(doc.id);
   } else if (!live && before && !before.revealedAt && doc?.revealedAt && S.tab === 'week') showFreshResults(doc.id);
@@ -982,7 +982,7 @@ function dock() {
     `<div class="dock"><span class="meter${full ? ' is-full' : ''}" style="--p:${full ? 100 : pct}%"></span><div class="dock-txt">${txt}</div>${buttons}</div>`;
   if (S.week?.revealedAt) {
     if (deckAt(S.week) != null) {
-      return bar(`<b>Reveal is on</b><small>${esc(nameOf(hostId()))} is running it.</small>`, '<button class="btn btn-primary" data-act="deck-open">Watch</button>', true);
+      return bar(`<b>Reveal is on</b><small>The Commissioner is running it.</small>`, '<button class="btn btn-primary" data-act="deck-open">Watch</button>', true);
     }
     return bar('<b>Lines are out</b><small>See who was closest.</small>', '<button class="btn btn-primary" data-act="tab" data-tab="results">Results</button>', true);
   }
@@ -1014,7 +1014,7 @@ function dock() {
     );
   }
   if (!amHost) {
-    return bar(`<b>Everyone’s here</b><small>${esc(`${nameOf(host)} hits Go.`)}</small>`, '<button class="btn btn-quiet" data-act="unready">Not yet</button>', true);
+    return bar(`<b>Everyone’s here</b><small>The Commissioner hits Go.</small>`, '<button class="btn btn-quiet" data-act="unready">Not yet</button>', true);
   }
   const goBtn =
     S.busy === 'reveal'
@@ -1212,7 +1212,7 @@ function deckView() {
   const ticks = games.map((g, i) => `<span class="tick${i < at ? ' is-done' : ''}${i === at ? ' is-now' : ''}"></span>`).join('');
   const controls =
     S.meId !== host
-      ? `<p class="deck-wait">${esc(nameOf(host))} is running the reveal</p>`
+      ? '<p class="deck-wait">The Commissioner is running the reveal</p>'
       : final
         ? `<button class="btn show-back" data-act="deck-back" aria-label="Back">${ICON.left}</button><button class="btn btn-primary show-next" data-act="deck-finish">Done</button>`
         : `<button class="btn show-back" data-act="deck-back" aria-label="Back" ${at === 0 ? 'disabled' : ''}>${ICON.left}</button><button class="btn btn-primary show-next" data-act="deck-next">${at + 1 < n ? 'Next game' : 'Final score'}</button>`;
