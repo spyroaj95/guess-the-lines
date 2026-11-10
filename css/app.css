@@ -421,6 +421,8 @@ svg { flex: none; }
 
 /* ---------- results ---------- */
 
+.replay { margin: 16px 20px 0; height: 40px; padding: 0 16px; font-size: 15px; }
+.replay svg { color: var(--amber); }
 .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; padding: 20px 16px 0; }
 .tile {
   min-width: 0;

@@ -1,10 +1,10 @@
-import * as config from './config.js?v=gtl3'; // a namespace, so a phone with an older cached config still loads
-import { LocalStore, createFirestoreStore } from './store.js?v=gtl3';
-import * as espn from './espn.js?v=gtl3';
-import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js?v=gtl3';
-import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js?v=gtl3';
-import { morphInto } from './morph.js?v=gtl3';
-import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, logoUrl, num, randomKey, slug, stamp, wins } from './util.js?v=gtl3';
+import * as config from './config.js?v=gtl4'; // a namespace, so a phone with an older cached config still loads
+import { LocalStore, createFirestoreStore } from './store.js?v=gtl4';
+import * as espn from './espn.js?v=gtl4';
+import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js?v=gtl4';
+import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js?v=gtl4';
+import { morphInto } from './morph.js?v=gtl4';
+import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, logoUrl, num, randomKey, slug, stamp, wins } from './util.js?v=gtl4';
 
 const main = document.getElementById('main');
 const foot = document.getElementById('foot');
@@ -27,6 +27,7 @@ const ICON = {
   link: svg('<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>', 17, 2),
   phone: svg('<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>', 17, 2),
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>', 20, 2.2),
+  play: svg('<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>', 14, 1.6),
   globe: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9s1.2-6.4 3.8-9z"/>', 11, 2.2),
   target:
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="#34D399"/></svg>',
@@ -63,6 +64,7 @@ const S = {
   justRevealed: null,
   deckOpen: false, // the reveal deck is on screen on this phone
   deckOut: {}, // weeks whose deck this phone closed
+  solo: null, // this phone's own replay of a reveal: { id, at, guesses }
   // UI
   sheet: null,
   sheetTimer: null,
@@ -86,7 +88,7 @@ const revealedIds = () =>
     .filter((w) => w.revealedAt)
     .map((w) => w.id)
     .sort();
-const hasPicks = (id) => Object.keys(S.guesses[id]?.picks || {}).length > 0;
+const hasPicks = (id, guesses = S.guesses) => Object.keys(guesses[id]?.picks || {}).length > 0;
 // Where the reveal deck is: a game index, the final score (= number of games), or null when off.
 const deckAt = (w) => (w?.revealedAt && Number.isInteger(w.stage) && w.stage >= 0 ? w.stage : null);
 const haptic = (pattern = 8) => {
@@ -128,12 +130,14 @@ async function boot() {
     S.players = players;
     if (!joined() && S.sheet?.type !== 'join') openSheet({ type: 'join' });
     render();
+    maybeReplay();
   });
   S.store.watchWeeks((list) => {
     S.weeks = Object.fromEntries(list.map((w) => [w.id, w]));
     if (S.tab === 'results') ensureResults();
     if (S.tab === 'season') loadSeason();
     render();
+    maybeReplay();
   });
 
   S.cal = await espn.loadCalendar();
@@ -304,9 +308,9 @@ function notReady() {
 }
 
 // The Commissioner runs the reveal: the league's first player who has picks this week gets Go.
-function hostId() {
+function hostId(guesses = S.guesses) {
   const joinedAt = (id) => S.players[id]?.joinedAt ?? Infinity;
-  return Object.keys(S.guesses).filter(hasPicks).sort((a, b) => joinedAt(a) - joinedAt(b) || a.localeCompare(b))[0] || null;
+  return Object.keys(guesses).filter((id) => hasPicks(id, guesses)).sort((a, b) => joinedAt(a) - joinedAt(b) || a.localeCompare(b))[0] || null;
 }
 
 async function setReady(on) {
@@ -366,7 +370,10 @@ async function reveal() {
 
 function syncDeck(before, doc) {
   const live = deckAt(doc) != null;
-  if (live && !S.deckOpen && !S.deckOut[doc.id]) S.deckOpen = true;
+  if (live && !S.deckOpen && !S.deckOut[doc.id]) {
+    S.deckOpen = true;
+    S.solo = null; // the live reveal beats a replay
+  }
   if (!live && deckAt(before) != null) {
     // The Commissioner hit Done: everyone lands on the results.
     S.deckOpen = false;
@@ -374,15 +381,28 @@ function syncDeck(before, doc) {
   } else if (!live && before && !before.revealedAt && doc?.revealedAt && S.tab === 'week') showFreshResults(doc.id);
 }
 
-async function moveDeck(to) {
-  const w = S.week;
-  const at = deckAt(w);
-  if (at == null || S.meId !== hostId() || to < 0 || to > w.games.length || to === at) return;
-  S.week = { ...w, stage: to }; // move this phone now; the others follow the server
-  haptic(to > at ? [10, 40, 16] : 6);
+// What the deck is showing: the reveal the Commissioner is running, or this phone's own replay.
+function deckSrc() {
+  if (S.deckOpen && deckAt(S.week) != null) return { w: S.week, games: weekGames(), guesses: S.guesses, at: deckAt(S.week), solo: false };
+  const w = S.solo && S.weeks[S.solo.id];
+  return w?.lines ? { w, games: withVenues(w.games), guesses: S.solo.guesses, at: S.solo.at, solo: true } : null;
+}
+
+async function moveDeck(dir) {
+  const src = deckSrc();
+  const to = (src?.at ?? 0) + dir;
+  if (!src || to < 0 || to > src.games.length) return;
+  if (src.solo) {
+    haptic(dir > 0 ? [10, 40, 16] : 6);
+    S.solo = { ...S.solo, at: to };
+    return render();
+  }
+  if (S.meId !== hostId()) return;
+  S.week = { ...src.w, stage: to }; // move this phone now; the others follow the server
+  haptic(dir > 0 ? [10, 40, 16] : 6);
   render();
   try {
-    await S.store.setStage(w.id, to);
+    await S.store.setStage(src.w.id, to);
   } catch (err) {
     console.error(err);
     toast('Couldn’t reach the server. Try again.');
@@ -390,6 +410,11 @@ async function moveDeck(to) {
 }
 
 async function finishDeck() {
+  const src = deckSrc();
+  if (src?.solo) {
+    S.solo = null;
+    return openResultsTab(src.w.id);
+  }
   const w = S.week;
   if (deckAt(w) == null || S.meId !== hostId()) return;
   try {
@@ -398,6 +423,49 @@ async function finishDeck() {
   } catch (err) {
     console.error(err);
     toast('Couldn’t reach the server. Try again.');
+  }
+}
+
+function closeDeck() {
+  if (S.solo) S.solo = null;
+  else {
+    if (S.week) {
+      S.deckOut[S.week.id] = true;
+      markSeen(S.week.id);
+    }
+    S.deckOpen = false;
+  }
+  render();
+}
+
+// Missed the reveal (locked and tapped Ready that morning, say)? The next time you open the app it
+// plays for you at your own pace. Once per week per phone, and never for the Commissioner, who ran it.
+const seenKey = (id) => `gtl:seen:${S.key}:${id}`;
+const seen = (id) => localStorage.getItem(seenKey(id)) === '1';
+const markSeen = (id) => seen(id) || localStorage.setItem(seenKey(id), '1');
+const replayTried = new Set();
+
+function maybeReplay() {
+  const id = revealedIds().pop();
+  const w = id && S.weeks[id];
+  // stage -1 = the Commissioner ran the reveal and hit Done (older weeks never had one).
+  if (!w || w.stage !== -1 || !joined() || S.sheet || S.solo || S.deckOpen || seen(id) || replayTried.has(id)) return;
+  replayTried.add(id);
+  startReplay(id, { auto: true });
+}
+
+async function startReplay(id, { auto = false } = {}) {
+  try {
+    const guesses = await S.store.allGuesses(id);
+    if (auto && S.meId === hostId(guesses)) return markSeen(id);
+    if (auto && (S.solo || S.deckOpen || S.sheet)) return;
+    markSeen(id);
+    S.solo = { id, at: 0, guesses };
+    haptic(8);
+    render();
+  } catch (err) {
+    console.error(err);
+    if (!auto) toast('Couldn’t load the reveal. Check your connection.');
   }
 }
 
@@ -682,13 +750,11 @@ document.addEventListener('click', (e) => {
     case 'ready': return setReady(true);
     case 'unready': return setReady(false);
     case 'reveal': return reveal();
-    case 'deck-next': return moveDeck((deckAt(S.week) ?? 0) + 1);
-    case 'deck-back': return moveDeck((deckAt(S.week) ?? 0) - 1);
+    case 'deck-next': return moveDeck(1);
+    case 'deck-back': return moveDeck(-1);
     case 'deck-finish': return finishDeck();
-    case 'deck-close':
-      if (S.week) S.deckOut[S.week.id] = true;
-      S.deckOpen = false;
-      return render();
+    case 'deck-close': return closeDeck();
+    case 'replay': return startReplay(d.id);
     case 'deck-open':
       if (S.week) delete S.deckOut[S.week.id];
       S.deckOpen = deckAt(S.week) != null;
@@ -731,22 +797,18 @@ document.addEventListener('submit', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && S.sheet) return closeSheet();
-  if (!S.deckOpen || S.sheet || e.metaKey || e.ctrlKey || e.altKey) return;
+  const src = deckSrc();
+  if (!src || S.sheet || e.metaKey || e.ctrlKey || e.altKey) return;
   // On a laptop hooked up to the TV: arrows or space run the deck.
-  const at = deckAt(S.week);
   const onControl = e.target.closest?.('button, input, a');
   if (e.key === 'ArrowRight' || (!onControl && (e.key === ' ' || e.key === 'Enter'))) {
     e.preventDefault();
-    if (at != null && at >= S.week.games.length) finishDeck();
-    else if (at != null) moveDeck(at + 1);
-  } else if (e.key === 'ArrowLeft' && at != null) {
+    if (src.at >= src.games.length) finishDeck();
+    else moveDeck(1);
+  } else if (e.key === 'ArrowLeft') {
     e.preventDefault();
-    moveDeck(at - 1);
-  } else if (e.key === 'Escape') {
-    if (S.week) S.deckOut[S.week.id] = true;
-    S.deckOpen = false;
-    render();
-  }
+    moveDeck(-1);
+  } else if (e.key === 'Escape') closeDeck();
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return flushNow();
@@ -784,17 +846,21 @@ function render() {
 
 let deckTimer;
 function renderDeck() {
-  if (S.deckOpen && deckAt(S.week) != null) {
+  const src = deckSrc();
+  if (src) {
+    if (!src.solo) markSeen(src.w.id); // watched it live, so no replay later
     clearTimeout(deckTimer);
     if (deckEl.hidden) {
-      deckEl.innerHTML = deckView();
+      deckEl.innerHTML = deckView(src);
       deckEl.hidden = false;
-    } else morphInto(deckEl, deckView());
+    } else morphInto(deckEl, deckView(src));
     document.body.classList.add('is-deck');
     if (!deckEl.classList.contains('is-open')) {
-      requestAnimationFrame(() => requestAnimationFrame(() => S.deckOpen && deckEl.classList.add('is-open')));
+      requestAnimationFrame(() => requestAnimationFrame(() => deckSrc() && deckEl.classList.add('is-open')));
     }
-  } else if (!deckEl.hidden && deckEl.classList.contains('is-open')) {
+  } else if (!deckEl.hidden && document.body.classList.contains('is-deck')) {
+    // (keyed on is-deck, set the moment the deck opens: is-open waits two frames, and a deck closed
+    // before then would otherwise stay on top, invisible, eating taps)
     document.body.classList.remove('is-deck');
     deckEl.classList.remove('is-open');
     deckTimer = setTimeout(() => {
@@ -1073,7 +1139,8 @@ function viewResults() {
   const groups = slotGroups(r.games, (gr) => gr.game)
     .map(({ head, rows }) => `${head}<div class="panel">${rows.map(({ item, own }) => resultRow(w, item, order, own, anim())).join('')}</div>`)
     .join('');
-  return view(`results-${w.id}`, `${head}<div class="board">${tiles}</div>${groups}`);
+  const replay = w.lines ? `<button class="btn replay" data-act="replay" data-id="${esc(w.id)}">${ICON.play}Watch the reveal</button>` : '';
+  return view(`results-${w.id}`, `${head}${replay}<div class="board">${tiles}</div>${groups}`);
 }
 
 function resultRow(w, { game: g, line, cells }, order, own, a) {
@@ -1182,28 +1249,26 @@ function viewSeason() {
 
 // ---- The reveal deck
 
-// Everyone with picks this week, in the same order as the player chips.
-function deckPlayers() {
-  const ids = sortedPlayers().filter(hasPicks);
-  return [...ids, ...Object.keys(S.guesses).filter((id) => hasPicks(id) && !ids.includes(id))];
+// Everyone with picks that week, in the same order as the player chips.
+function deckPlayers(guesses) {
+  const ids = sortedPlayers().filter((id) => hasPicks(id, guesses));
+  return [...ids, ...Object.keys(guesses).filter((id) => hasPicks(id, guesses) && !ids.includes(id))];
 }
 
 // Games won over the first k games of the deck.
-function tally(w, games, k) {
-  const r = scoreWeek({ games: games.slice(0, k), lines: w.lines }, S.guesses);
+function tally(w, games, k, guesses) {
+  const r = scoreWeek({ games: games.slice(0, k), lines: w.lines }, guesses);
   return Object.fromEntries(r.players.map((p) => [p.playerId, p.won]));
 }
 
-function deckView() {
-  const w = S.week;
-  const at = deckAt(w);
-  const games = weekGames();
+// src (from deckSrc): the week, its games and guesses, the slide, and whether this phone drives it.
+function deckView({ w, games, guesses, at, solo }) {
   const n = games.length;
   const final = at >= n;
-  const ids = deckPlayers();
-  const host = hostId();
-  const before = tally(w, games, Math.min(at, n));
-  const after = tally(w, games, Math.min(at + 1, n));
+  const ids = deckPlayers(guesses);
+  const drives = solo || S.meId === hostId();
+  const before = tally(w, games, Math.min(at, n), guesses);
+  const after = tally(w, games, Math.min(at + 1, n), guesses);
   // The scoreboard ticks over once the line flips, not before.
   const score = ids
     .map((id) => {
@@ -1214,35 +1279,34 @@ function deckView() {
     })
     .join('');
   const ticks = games.map((g, i) => `<span class="tick${i < at ? ' is-done' : ''}${i === at ? ' is-now' : ''}"></span>`).join('');
-  const controls =
-    S.meId !== host
-      ? '<p class="deck-wait">The Commissioner is running the reveal</p>'
-      : final
-        ? `<button class="btn show-back" data-act="deck-back" aria-label="Back">${ICON.left}</button><button class="btn btn-primary show-next" data-act="deck-finish">Done</button>`
-        : `<button class="btn show-back" data-act="deck-back" aria-label="Back" ${at === 0 ? 'disabled' : ''}>${ICON.left}</button><button class="btn btn-primary show-next" data-act="deck-next">${at + 1 < n ? 'Next game' : 'Final score'}</button>`;
+  const controls = !drives
+    ? '<p class="deck-wait">The Commissioner is running the reveal</p>'
+    : final
+      ? `<button class="btn show-back" data-act="deck-back" aria-label="Back">${ICON.left}</button><button class="btn btn-primary show-next" data-act="deck-finish">Done</button>`
+      : `<button class="btn show-back" data-act="deck-back" aria-label="Back" ${at === 0 ? 'disabled' : ''}>${ICON.left}</button><button class="btn btn-primary show-next" data-act="deck-next">${at + 1 < n ? 'Next game' : 'Final score'}</button>`;
   return `<div class="deck" role="dialog" aria-modal="true" aria-labelledby="deck-title">
       <header class="show-top">
         <button class="show-x" data-act="deck-close" aria-label="Close the reveal">${ICON.close}</button>
-        <h2 id="deck-title" class="show-title"><span class="gtl">GTL</span>${esc(weekTitle(curWeek()))} reveal</h2>
+        <h2 id="deck-title" class="show-title"><span class="gtl">GTL</span>${esc(weekTitle(w))} ${solo ? 'replay' : 'reveal'}</h2>
         <span class="show-count">${final ? 'FINAL' : `${at + 1}/${n}`}</span>
       </header>
       <div class="ticks" aria-hidden="true">${ticks}</div>
       <div class="score" aria-label="Games won">${score}</div>
-      ${final ? deckFinal(w, games) : deckGame(w, games[at], at, ids)}
+      ${final ? deckFinal(w, games, guesses) : deckGame(w, games[at], at, ids, guesses)}
       <footer class="show-foot">${controls}</footer>
     </div>`;
 }
 
 // One game: the matchup and everyone's guess, then (on a timer, in CSS) the line flips over,
 // the misses show, the closest guess lights up and the scoreboard ticks.
-function deckGame(w, g, at, ids) {
+function deckGame(w, g, at, ids, guesses) {
   const line = w.lines?.[g.id] ?? null;
-  const r = line != null ? scoreWeek({ games: [g], lines: { [g.id]: line } }, S.guesses).games[0] : null;
+  const r = line != null ? scoreWeek({ games: [g], lines: { [g.id]: line } }, guesses).games[0] : null;
   const cell = Object.fromEntries((r?.cells || []).map((c) => [c.playerId, c]));
   const share = r?.winners.length ? 1 / r.winners.length : 0;
   const rows = ids
     .map((id, i) => {
-      const pick = S.guesses[id]?.picks?.[g.id];
+      const pick = guesses[id]?.picks?.[g.id];
       const c = cell[id];
       const off = !r ? '' : !c ? '<div class="guess-off">no pick</div>' : c.exact ? `<div class="guess-off exact">${ICON.target}Exact</div>` : `<div class="guess-off">${num(c.miss)} off</div>`;
       return `<div class="guess${id === S.meId ? ' is-me' : ''}${c?.win ? ' is-win' : ''}${pick == null ? ' is-empty' : ''}" style="--i:${i}"><div class="guess-who"><div class="guess-name">${esc(nameOf(id))}</div>${
@@ -1250,7 +1314,7 @@ function deckGame(w, g, at, ids) {
       }</div><div class="guess-pick">${pick == null ? '—' : esc(lineText(g, pick))}</div>${off}${c?.win ? `<span class="plus">+${wins(share)}</span>` : ''}</div>`;
     })
     .join('');
-  const picks = ids.map((id) => S.guesses[id]?.picks?.[g.id]).filter((v) => v != null);
+  const picks = ids.map((id) => guesses[id]?.picks?.[g.id]).filter((v) => v != null);
   const tease = picks.length > 1 && picks.some((v) => v < 0) && picks.some((v) => v > 0) ? 'Different favorites' : '';
   let say = 'ESPN had no line for this one.';
   if (r && !r.winners.length) say = 'Nobody guessed this one';
@@ -1278,8 +1342,8 @@ function deckGame(w, g, at, ids) {
     </section>`;
 }
 
-function deckFinal(w, games) {
-  const r = scoreWeek({ ...w, games }, S.guesses);
+function deckFinal(w, games, guesses) {
+  const r = scoreWeek({ ...w, games }, guesses);
   const names = r.weekWinners.map(nameOf);
   const title = !names.length ? 'No games scored' : names.length === 1 ? `${names[0]} wins the week` : `${listNames(names)} split the week`;
   const tiles = r.players
