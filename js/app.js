@@ -1,10 +1,10 @@
-import * as config from './config.js?v=gtl4'; // a namespace, so a phone with an older cached config still loads
-import { LocalStore, createFirestoreStore } from './store.js?v=gtl4';
-import * as espn from './espn.js?v=gtl4';
-import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js?v=gtl4';
-import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js?v=gtl4';
-import { morphInto } from './morph.js?v=gtl4';
-import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, logoUrl, num, randomKey, slug, stamp, wins } from './util.js?v=gtl4';
+import * as config from './config.js?v=gtl5'; // a namespace, so a phone with an older cached config still loads
+import { LocalStore, createFirestoreStore } from './store.js?v=gtl5';
+import * as espn from './espn.js?v=gtl5';
+import { expectedPlayers, scoreSeason, scoreWeek } from './scoring.js?v=gtl5';
+import { SLOT_NAME, newerLines, pickLines, snapTimes } from './lines.js?v=gtl5';
+import { morphInto } from './morph.js?v=gtl5';
+import { MINUS, avg, dateRange, esc, gameBadges, initials, kickoff, lineText, listNames, logoUrl, num, randomKey, slug, stamp, wins } from './util.js?v=gtl5';
 
 const main = document.getElementById('main');
 const foot = document.getElementById('foot');
@@ -75,11 +75,11 @@ const S = {
 
 const meKey = () => `gtl:me:${S.key}`;
 const curWeek = () => S.cal?.weeks[S.weekIdx];
-const weekGames = () => (S.week?.games ? withVenues(S.week.games) : S.liveGames || []);
+const weekGames = () => (S.week?.games ? withVenues(S.week.games, !S.week.revealedAt) : S.liveGames || []);
 const joined = () => Boolean(S.meId && S.players[S.meId]);
 const myGuess = () => S.guesses[S.meId];
 const nameOf = (id) => S.players[id]?.name || S.guesses[id]?.name || S.resGuesses[id]?.name || id;
-const canEdit = () => joined() && S.week !== undefined && !S.week?.revealedAt && !myGuess()?.lockedAt;
+const canEdit = () => joined() && S.week !== undefined && S.guessesFor === curWeek()?.id && !S.week?.revealedAt && !myGuess()?.lockedAt;
 const weekTitle = (w) => (!w ? '' : w.type === 3 ? w.short : `Week ${w.week}`);
 const shortWeek = (w) => (!w ? '' : w.type === 3 ? w.short : `Wk ${w.week}`);
 const inviteUrl = () => `${location.origin}${location.pathname}#k=${S.key}`;
@@ -88,6 +88,8 @@ const revealedIds = () =>
     .filter((w) => w.revealedAt)
     .map((w) => w.id)
     .sort();
+// The Season tab is this season only (the league keeps its earlier seasons under the same link).
+const seasonIds = () => revealedIds().filter((id) => !S.cal || S.weeks[id].season == null || S.weeks[id].season === S.cal.season);
 const hasPicks = (id, guesses = S.guesses) => Object.keys(guesses[id]?.picks || {}).length > 0;
 // Where the reveal deck is: a game index, the final score (= number of games), or null when off.
 const deckAt = (w) => (w?.revealedAt && Number.isInteger(w.stage) && w.stage >= 0 ? w.stage : null);
@@ -101,13 +103,14 @@ const haptic = (pattern = 8) => {
 
 // Week docs keep a copy of the schedule from the first saved pick. Copies made before venues and
 // TV were part of it borrow them from the live schedule.
-function withVenues(games) {
-  if (!S.liveGames || games.every((g) => g.venue)) return games;
+const scheduleOf = ({ id, kickoff: k, home, away, venue, neutral, note, tv }) => ({ id, kickoff: k, home, away, venue, neutral, note, tv });
+function withVenues(games, addNew = false) {
+  if (!S.liveGames) return games;
   const live = Object.fromEntries(S.liveGames.map((g) => [g.id, g]));
-  return games.map((g) => {
-    const l = live[g.id];
-    return g.venue || !l ? g : { ...g, venue: l.venue, neutral: l.neutral, note: l.note, tv: l.tv };
-  });
+  const have = new Set(games.map((g) => g.id));
+  const merged = games.map((g) => (live[g.id] ? { ...g, ...scheduleOf(live[g.id]) } : g));
+  if (addNew) merged.push(...S.liveGames.filter((g) => !have.has(g.id)).map(scheduleOf));
+  return merged.sort((a, b) => a.kickoff.localeCompare(b.kickoff) || a.id.localeCompare(b.id));
 }
 
 function sortedPlayers() {
@@ -142,7 +145,19 @@ async function boot() {
 
   S.cal = await espn.loadCalendar();
   const target = await espn.targetWeek(S.cal);
-  await openWeek(S.cal.weeks.findIndex((w) => w.id === target.id));
+  S.autoIdx = S.cal.weeks.findIndex((w) => w.id === target.id);
+  await openWeek(S.autoIdx);
+}
+
+// The week the app opened on has kicked off since: move to the next one, unless the user paged away.
+async function retarget() {
+  if (!S.cal || S.weekIdx !== S.autoIdx || S.saveTimer || S.sheet) return;
+  const target = await espn.targetWeek(S.cal).catch(() => null);
+  const idx = target ? S.cal.weeks.findIndex((w) => w.id === target.id) : -1;
+  if (idx > S.autoIdx && S.weekIdx === S.autoIdx) {
+    S.autoIdx = idx;
+    openWeek(idx);
+  }
 }
 
 function readLeagueKey() {
@@ -170,7 +185,7 @@ async function openWeek(idx) {
   const w = S.cal.weeks[idx];
   S.unsub.week?.();
   S.unsub.guesses?.();
-  Object.assign(S, { weekIdx: idx, week: undefined, guesses: {}, liveGames: null, myPicks: {}, error: null });
+  Object.assign(S, { weekIdx: idx, week: undefined, guesses: {}, guessesFor: null, liveGames: null, myPicks: {}, error: null });
   render();
   S.unsub.week = S.store.watchWeek(w.id, (doc) => {
     const before = S.week;
@@ -181,6 +196,7 @@ async function openWeek(idx) {
   });
   S.unsub.guesses = S.store.watchGuesses(w.id, (g) => {
     S.guesses = g;
+    S.guessesFor = w.id;
     syncMyPicks();
     render();
   });
@@ -331,6 +347,10 @@ async function reveal() {
   const unready = notReady().map(nameOf);
   if (unready.length) return toast(`Waiting on ${listNames(unready)} to tap Ready.`);
   if (S.meId !== hostId()) return toast('The Commissioner hits Go.');
+  // Who played last week decides who the warning names: have it in hand before asking (a freshly
+  // opened page hasn't loaded it yet).
+  const prevId = revealedIds().filter((id) => id < w.id).pop();
+  if (prevId) S.guessCache[prevId] = await S.store.allGuesses(prevId).catch(() => S.guessCache[prevId] || {});
   const waiting = waitingOn().map(nameOf);
   if (
     waiting.length &&
@@ -342,7 +362,8 @@ async function reveal() {
   try {
     const [snaps, fresh] = await Promise.all([loadSnaps(w.id), espn.loadWeek(w, { fresh: true }).catch(() => [])]);
     const live = Object.fromEntries(fresh.map((g) => [g.id, g.line]));
-    const { lines, from } = pickLines(S.week.games, snaps, live);
+    const games = weekGames().map(scheduleOf); // the schedule as it stands tonight goes into the week
+    const { lines, from } = pickLines(games, snaps, live);
     if (Object.values(lines).every((l) => l == null)) {
       toast('No lines are posted for these games yet.');
       return;
@@ -351,8 +372,12 @@ async function reveal() {
     const used = Object.values(from);
     const lineAsOf = used.includes('mon') ? times.mon : used.includes('sun') ? times.sun : Date.now();
     const lineSource = snaps?.mon?.source || snaps?.sun?.source || fresh.find((g) => g.lineSource)?.lineSource || 'ESPN';
+    if (notReady().length || S.meId !== hostId()) {
+      toast('Someone took Ready back. Try again.');
+      return;
+    }
     // stage 0 puts every phone on the first game of the reveal deck.
-    await S.store.reveal(w.id, { lines, lineFrom: from, lineSnaps: times, lineSource, lineAsOf, stage: 0 });
+    await S.store.reveal(w.id, { games, lines, lineFrom: from, lineSnaps: times, lineSource, lineAsOf, stage: 0 });
     haptic([12, 60, 18]);
   } catch (err) {
     console.error(err);
@@ -449,7 +474,8 @@ function maybeReplay() {
   const id = revealedIds().pop();
   const w = id && S.weeks[id];
   // stage -1 = the Commissioner ran the reveal and hit Done (older weeks never had one).
-  if (!w || w.stage !== -1 || !joined() || S.sheet || S.solo || S.deckOpen || seen(id) || replayTried.has(id)) return;
+  const over = w && (w.stage === -1 || (Number.isInteger(w.stage) && w.stage >= (w.games || []).length));
+  if (!over || !joined() || S.sheet || S.solo || S.deckOpen || seen(id) || replayTried.has(id)) return;
   replayTried.add(id);
   startReplay(id, { auto: true });
 }
@@ -557,7 +583,7 @@ async function loadSeason() {
   const token = ++S.seasonToken;
   try {
     const entries = await Promise.all(
-      revealedIds().map(async (id) => ({ week: S.weeks[id], guesses: await S.store.allGuesses(id) })),
+      seasonIds().map(async (id) => ({ week: S.weeks[id], guesses: await S.store.allGuesses(id) })),
     );
     if (token !== S.seasonToken) return;
     S.season = scoreSeason(entries);
@@ -605,6 +631,7 @@ async function becomePlayer(id) {
   haptic(8);
   closeSheet(true);
   render();
+  maybeReplay();
 }
 
 async function copyLink() {
@@ -680,7 +707,7 @@ function pickerSide(side) {
     return closeSheet();
   }
   const cur = pickerValue(S.sheet);
-  if (cur != null && cur !== 0) applyValue(target, gameId, side === 'home' ? -Math.abs(cur) : Math.abs(cur));
+  if (cur != null && cur !== 0 && target !== 'line') applyValue(target, gameId, side === 'home' ? -Math.abs(cur) : Math.abs(cur));
   S.sheet = { ...S.sheet, side };
   renderSheet();
 }
@@ -812,6 +839,7 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return flushNow();
+  retarget();
   // Back on the app (say, Monday morning): check for newer lines again.
   linesChecked.clear();
   refreshLines(S.week);
@@ -1171,7 +1199,7 @@ function resultRow(w, { game: g, line, cells }, order, own, a) {
 // ---- Season
 
 function viewSeason() {
-  const ids = revealedIds();
+  const ids = seasonIds();
   const last = ids.length ? S.weeks[ids[ids.length - 1]] : null;
   const year = S.cal?.season || '';
   const head = top({ title: 'Season', sub: last ? `${year} · through ${esc(shortWeek(last))}` : `${year} standings`, meta: String(year) });

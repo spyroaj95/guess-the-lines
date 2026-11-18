@@ -54,7 +54,7 @@ export function scoreWeek(week, guesses) {
   const players = Object.values(tally)
     .filter((t) => t.games > 0)
     .map((t) => ({ ...t, avg: t.missSum / t.games }))
-    .sort((a, b) => b.won - a.won || a.avg - b.avg || a.playerId.localeCompare(b.playerId));
+    .sort((a, b) => (same(a.won, b.won) ? 0 : b.won - a.won) || a.avg - b.avg || a.playerId.localeCompare(b.playerId));
 
   const top = players[0];
   const weekWinners = top

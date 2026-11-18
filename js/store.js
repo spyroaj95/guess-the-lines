@@ -145,7 +145,7 @@ class FirestoreStore {
   watchPlayers(cb) {
     return this.fs.onSnapshot(this.col('players'), (s) => {
       const o = {};
-      s.forEach((d) => (o[d.id] = plain(d.data())));
+      s.forEach((d) => (o[d.id] = plain(d.data({ serverTimestamps: 'estimate' }))));
       cb(o);
     });
   }
@@ -157,10 +157,10 @@ class FirestoreStore {
     });
   }
   watchWeeks(cb) {
-    return this.fs.onSnapshot(this.col('weeks'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...plain(d.data()) }))));
+    return this.fs.onSnapshot(this.col('weeks'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...plain(d.data({ serverTimestamps: 'estimate' })) }))));
   }
   watchWeek(id, cb) {
-    return this.fs.onSnapshot(this.ref('weeks', id), (d) => cb(d.exists() ? { id: d.id, ...plain(d.data()) } : null));
+    return this.fs.onSnapshot(this.ref('weeks', id), (d) => cb(d.exists() ? { id: d.id, ...plain(d.data({ serverTimestamps: 'estimate' })) } : null));
   }
   async ensureWeek(id, data) {
     const { runTransaction, serverTimestamp } = this.fs;
@@ -172,14 +172,14 @@ class FirestoreStore {
   watchGuesses(id, cb) {
     return this.fs.onSnapshot(this.col('weeks', id, 'guesses'), (s) => {
       const o = {};
-      s.forEach((d) => (o[d.id] = plain(d.data())));
+      s.forEach((d) => (o[d.id] = plain(d.data({ serverTimestamps: 'estimate' }))));
       cb(o);
     });
   }
   async allGuesses(id) {
     const s = await this.fs.getDocs(this.col('weeks', id, 'guesses'));
     const o = {};
-    s.forEach((d) => (o[d.id] = plain(d.data())));
+    s.forEach((d) => (o[d.id] = plain(d.data({ serverTimestamps: 'estimate' }))));
     return o;
   }
   async savePicks(weekId, playerId, picks, name) {

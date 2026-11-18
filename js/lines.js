@@ -18,12 +18,15 @@ export function slotToTake(date, have = {}) {
   const p = Object.fromEntries(et.formatToParts(date).map((x) => [x.type, x.value]));
   const day = p.weekday;
   const hour = Number(p.hour) % 24;
-  if ((day === 'Sun' && hour >= 21) || (day === 'Mon' && hour < 3)) return (day === 'Sun' && hour === 23) || !have.sun ? 'sun' : null;
-  if (day === 'Mon' && hour >= 6 && hour < 12) return hour === 8 || !have.mon ? 'mon' : null;
+  // Taken already = taken in this window. (The same week can be the target on two Sundays.)
+  const taken = (s) => have[s]?.at != null && date - new Date(have[s].at) < 12 * 3600e3;
+  if ((day === 'Sun' && hour === 23) || (day === 'Mon' && hour < 3)) return taken('sun') ? null : 'sun';
+  if (day === 'Mon' && hour >= 8 && hour < 12) return taken('mon') ? null : 'mon';
   return null;
 }
 
-const newest = (snaps, gameId) => [...SLOTS].reverse().find((s) => snaps?.[s]?.lines?.[gameId] != null);
+const stale = (snaps, s) => s === 'mon' && snaps.sun?.at > snaps.mon?.at; // a Monday older than Sunday is last week's
+const newest = (snaps, gameId) => [...SLOTS].reverse().find((s) => snaps?.[s]?.lines?.[gameId] != null && !stale(snaps, s));
 
 /**
  * The line for each game at the reveal: Monday morning's, else Sunday night's, else whatever ESPN

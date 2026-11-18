@@ -35,6 +35,10 @@ if (!slot) {
 
 const games = await espn.loadWeek(week, { fresh: true });
 const lines = Object.fromEntries(games.map((g) => [g.id, g.line]));
+if (!Object.values(lines).some((l) => l != null)) {
+  console.log(`${week.label}: no lines posted, leaving the file alone.`);
+  process.exit(0);
+}
 const source = games.find((g) => g.lineSource)?.lineSource || 'ESPN';
 doc[slot] = { at: new Date().toISOString(), source, lines };
 mkdirSync(dir, { recursive: true });
